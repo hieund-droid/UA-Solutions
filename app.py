@@ -33,6 +33,11 @@ import logo_cover_core
 
 st.set_page_config(page_title="Video Tools", page_icon="🎬", layout="wide")
 
+# Khoá tạm tính năng "Che Logo Đối Thủ" — hiện màn hình "sắp ra mắt" thay vì
+# giao diện thật (đã build xong, chỉ đang ẩn). Đổi thành False để mở lại.
+LOGO_COVER_LOCKED = True
+COMING_SOON_GIF = "https://media.giphy.com/media/IhEXkpvYS0rYH8A4eq/giphy.gif"
+
 st.markdown(
     """
     <style>
@@ -63,9 +68,17 @@ st.markdown(
 
     /* Thanh menu bên trái: cho ô radio trông giống danh sách điều hướng,
     tô nền đen cho mục đang chọn — chỉ đổi màu nền/chữ, KHÔNG đụng tới
-    font-family, để chữ tiếng Việt luôn hiển thị đúng. */
+    font-family, để chữ tiếng Việt luôn hiển thị đúng. Ép rộng hết chiều
+    ngang thanh bên trái (trước đó chỉ vừa khít chữ). */
+    section[data-testid="stSidebar"] div[role="radiogroup"] {
+        width: 100%;
+    }
     section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 0.55rem 0.7rem; border-radius: 8px; width: 100%; margin-bottom: 2px;
+        display: flex; padding: 0.55rem 0.7rem; border-radius: 8px;
+        width: 100%; box-sizing: border-box; margin-bottom: 2px;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label > div {
+        width: 100%;
     }
     section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
         background-color: #F0F0F0;
@@ -77,17 +90,13 @@ st.markdown(
         color: #FFFFFF;
     }
 
-    /* Ghim khối tài khoản/đăng xuất xuống cuối thanh bên trái. Nhắm vào
-    NHIỀU lớp bọc khác nhau (tên có thể đổi giữa các bản Streamlit) để tăng
-    khả năng ăn đúng — lớp nào không tồn tại thì trình duyệt bỏ qua, không
-    ảnh hưởng gì. */
-    section[data-testid="stSidebar"],
-    section[data-testid="stSidebar"] > div,
-    [data-testid="stSidebarContent"],
+    /* Ghim khối tài khoản/đăng xuất xuống cuối thanh bên trái — neo trực
+    tiếp theo chiều cao màn hình (100vh) ở đúng vùng nội dung sidebar, tránh
+    phụ thuộc chuỗi height % của nhiều lớp cha (dễ gãy giữa chừng, gây hiện
+    tượng chỉ cao được 1 nửa). */
     [data-testid="stSidebarUserContent"] {
-        display: flex; flex-direction: column; height: 100%;
+        display: flex; flex-direction: column; min-height: 100vh;
     }
-    [data-testid="stSidebarUserContent"] { flex: 1 1 auto; }
     .st-key-sidebar_footer { margin-top: auto; }
     </style>
     """,
@@ -591,7 +600,17 @@ def render_logo_cover():
 
     Đã thử nghiệm và bỏ hướng tự động hoàn toàn (không biết trước watermark
     là gì) vì không khả thi với video quay tay/cắt cảnh nhanh — xem
-    logo_cover_core.py để biết chi tiết lý do."""
+    logo_cover_core.py để biết chi tiết lý do.
+
+    Hiện đang KHOÁ TẠM (xem LOGO_COVER_LOCKED ở đầu file) — code phía dưới
+    vẫn hoạt động đầy đủ, chỉ đang ẩn sau màn hình "sắp ra mắt"."""
+    if LOGO_COVER_LOCKED:
+        st.title("🚫 Che Logo Đối Thủ")
+        st.markdown("### 🚧 Skill upcoming...")
+        st.image(COMING_SOON_GIF, use_container_width=True)
+        st.caption("Đang hoàn thiện thêm — quay lại sau nhé ☕")
+        return
+
     st.title("🚫 Che Logo Đối Thủ")
     st.caption(
         "Khoanh vùng logo/chữ thương hiệu đối thủ ở 1 khung hình — tool tự "
