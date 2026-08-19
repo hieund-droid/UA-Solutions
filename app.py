@@ -145,7 +145,7 @@ def _enforce_single_outro_tick(category, just_ticked_name, all_names):
 
 
 @st.cache_data(show_spinner=False)
-def _outro_preview(path_str, mtime, max_width=120):
+def _outro_preview(path_str, mtime, max_width=320):
     """Ảnh thumbnail (RGB, đã thu nhỏ) + thời lượng của 1 outro — cache theo
     (đường dẫn, thời điểm sửa file) để KHÔNG phải đọc lại video/gọi ffprobe
     mỗi khi trang tự load lại (vd tích ô khác, đổi loại outro...). Thu nhỏ
