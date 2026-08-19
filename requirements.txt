@@ -2,3 +2,4 @@ streamlit
 scenedetect
 opencv-python-headless
 numpy
+streamlit-option-menu

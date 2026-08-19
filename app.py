@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 import streamlit as st
+from streamlit_option_menu import option_menu
 
 import remix_core as core
 import outro_core
@@ -51,14 +52,12 @@ st.markdown(
     }
     hr { margin: 1.6rem 0; }
 
-    /* Thanh menu bên trái: cho ô radio trông giống danh sách điều hướng
-    (nav list) thay vì ô chọn thô. */
-    section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 0.5rem 0.7rem; border-radius: 8px; width: 100%;
+    /* Ghim khối tài khoản/đăng xuất xuống cuối thanh bên trái, dù menu phía
+    trên có bao nhiêu mục cũng không đẩy nó lên theo. */
+    section[data-testid="stSidebar"] > div:first-child {
+        display: flex; flex-direction: column; height: 100vh;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background-color: #F0F0F0;
-    }
+    .st-key-sidebar_footer { margin-top: auto; padding-bottom: 1rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -453,9 +452,17 @@ def render_outro_swap():
                 key=f"outro_upload_{label}", label_visibility="collapsed",
             )
             if new_file is not None:
-                path.write_bytes(new_file.getvalue())
-                st.success(f"Đã lưu outro {label} mới.")
-                st.rerun()
+                # File tải lên vẫn còn "dính" trong ô upload ở MỌI lần trang
+                # tự load lại sau đó (chọn dropdown, tải video khác...), nên
+                # phải nhớ đã lưu file NÀY rồi — nếu không, code sẽ tưởng là
+                # file mới, ghi lại + rerun() liên tục mỗi lần trang tải lại,
+                # khiến trang cứ tự nhảy/reset không dừng.
+                sig = (new_file.name, new_file.size)
+                if st.session_state.get(f"outro_saved_sig_{label}") != sig:
+                    path.write_bytes(new_file.getvalue())
+                    st.session_state[f"outro_saved_sig_{label}"] = sig
+                    st.success(f"Đã lưu outro {label} mới.")
+                    st.rerun()
 
     uploaded_files = st.file_uploader(
         "Kéo-thả video của đối thủ vào đây (nên tải nhiều video CÙNG 1 app/chiến "
@@ -549,21 +556,36 @@ def render_outro_swap():
 check_ffmpeg()
 
 # Danh sách công cụ hiện trên thanh menu bên trái — thêm công cụ mới sau này
-# chỉ cần thêm 1 dòng vào đây (nhãn hiện trên menu -> hàm render tương ứng),
-# không cần sửa gì chỗ khác.
+# chỉ cần thêm 1 dòng vào đây (nhãn -> (hàm render, icon Bootstrap Icons,
+# xem đầy đủ tên icon tại https://icons.getbootstrap.com/), không cần sửa
+# gì chỗ khác.
 PAGES = {
-    "🎬  Video Remixer": render_video_remixer,
-    "✂️  Cắt & Gắn Outro": render_outro_swap,
+    "Video Remixer": (render_video_remixer, "film"),
+    "Cắt & Gắn Outro": (render_outro_swap, "scissors"),
 }
 
 with st.sidebar:
     st.markdown("## 🧰 Video Tools")
     st.caption("Bộ công cụ nội bộ Apero")
-    choice = st.radio(
-        "Công cụ", list(PAGES.keys()), label_visibility="collapsed", key="nav_choice",
+    choice = option_menu(
+        menu_title=None,
+        options=list(PAGES.keys()),
+        icons=[icon for _, icon in PAGES.values()],
+        default_index=0,
+        key="nav_menu",
+        styles={
+            "container": {"padding": "0", "background-color": "transparent"},
+            "icon": {"color": "#111111", "font-size": "16px"},
+            "nav-link": {
+                "font-size": "15px", "text-align": "left", "margin": "2px 0",
+                "border-radius": "8px", "--hover-color": "#F0F0F0",
+            },
+            "nav-link-selected": {"background-color": "#111111", "color": "white"},
+        },
     )
-    st.divider()
-    st.caption("🔓 Đã đăng nhập")
-    st.button("Đăng xuất", on_click=lambda: st.session_state.pop("authed", None), key="logout_btn")
+    with st.container(key="sidebar_footer"):
+        st.divider()
+        st.caption("🔓 Đã đăng nhập")
+        st.button("Đăng xuất", on_click=lambda: st.session_state.pop("authed", None), key="logout_btn")
 
-PAGES[choice]()
+PAGES[choice][0]()
