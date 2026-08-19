@@ -45,7 +45,6 @@ from remix_core import (
     concat_clips,
     detect_scenes,
     ffprobe_info,
-    pick_target_spec,
     split_clips,
 )
 
@@ -61,6 +60,22 @@ MAX_OUTRO_LOOKBACK = 20.0
 # Ngưỡng mặc định cho _match() — xem lý do dùng "màu trung bình theo lưới"
 # thay vì so vân ảnh (perceptual hash) ngay bên dưới.
 DEFAULT_MATCH_THRESHOLD = 15
+
+
+def _pick_larger_spec(info_a, info_b):
+    """Chọn khung hình chuẩn (width/height) theo bên nào có ĐỘ PHÂN GIẢI
+    CAO HƠN giữa 2 nguồn — dùng khi ghép content (từ video đối thủ) với
+    outro (của bạn). Nếu luôn lấy theo video đối thủ (thường là file tải
+    về, độ phân giải thấp hơn) thì outro chất lượng cao của bạn sẽ bị co
+    nhỏ xuống theo khi ghép, gây mờ dù file gốc trên máy không hề mờ."""
+    area_a = (info_a["width"] or 0) * (info_a["height"] or 0)
+    area_b = (info_b["width"] or 0) * (info_b["height"] or 0)
+    bigger = info_a if area_a >= area_b else info_b
+    return {
+        "width": bigger["width"] or 1280,
+        "height": bigger["height"] or 720,
+        "fps": info_a["fps"] or info_b["fps"] or 30,
+    }
 
 
 def _color_thumb(frame, size=12):
@@ -209,11 +224,13 @@ def process_outro_swap(paths, own_outro_path, workdir, threshold, detector, min_
     made = []
     for i, (p, b) in enumerate(zip(paths, boundaries)):
         info = ffprobe_info(p)
-        # Mỗi video giữ đúng khung hình/tốc độ khung hình gốc của NÓ (không
-        # cần đồng nhất kích thước với các video khác, vì không ghép chéo
-        # nội dung giữa các video như remix_core.py) — chỉ co giãn riêng
-        # outro của mình cho khớp khung hình video đó.
-        target_spec = pick_target_spec([info])
+        # Không cần đồng nhất kích thước với các video khác (không ghép
+        # chéo nội dung giữa các video như remix_core.py) — nhưng PHẢI chọn
+        # khung hình chuẩn theo bên nào có ĐỘ PHÂN GIẢI CAO HƠN giữa video
+        # nguồn và outro của bạn. Nếu luôn lấy theo video nguồn (thường thấp
+        # hơn, vì là file tải về từ đối thủ) thì outro chất lượng cao của
+        # bạn sẽ bị co nhỏ xuống theo, gây mờ — đã gặp lỗi này trên thực tế.
+        target_spec = _pick_larger_spec(info, own_info)
         want_audio = (not strip_audio) and (info["has_audio"] or own_info["has_audio"])
 
         content_end = b["outro_start"] if b["outro_start"] is not None else info["duration"]

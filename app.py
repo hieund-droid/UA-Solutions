@@ -17,6 +17,7 @@
 """
 
 import random
+import re
 import shutil
 import tempfile
 import uuid
@@ -163,6 +164,29 @@ def save_uploads(uploaded_files, prefix="video_remixer_"):
         p.write_bytes(f.getvalue())
         paths.append(p)
     return workdir, paths
+
+
+def _sanitize_name_prefix(name):
+    name = name.strip()
+    return re.sub(r'[\\/:*?"<>|]', "_", name)
+
+
+def apply_output_naming(paths, prefix):
+    """Đổi tên các file kết quả theo cú pháp "prefix.1", "prefix.2", ... nếu
+    người dùng có nhập tên ở ô 'Đặt tên file xuất ra' — giữ nguyên tên mặc
+    định (tự động) nếu để trống."""
+    prefix = _sanitize_name_prefix(prefix) if prefix else ""
+    if not prefix:
+        return paths
+    renamed = []
+    for i, p in enumerate(paths, start=1):
+        new_path = p.parent / f"{prefix}.{i}{p.suffix}"
+        try:
+            p.rename(new_path)
+            renamed.append(new_path)
+        except OSError:
+            renamed.append(p)  # doi ten loi (vd trung ten file) -> giu nguyen, khong chan luong
+    return renamed
 
 
 def render_results_grid(paths, download_key_prefix, cols_per_row=3):
@@ -353,6 +377,13 @@ def render_video_remixer():
         "Số video muốn tạo ra", min_value=1, max_value=200, step=1, key="variants_value"
     )
 
+    output_name = st.text_input(
+        "Đặt tên file xuất ra (tuỳ chọn)",
+        placeholder="vd: hieund.apero → hieund.apero.1, hieund.apero.2, ...",
+        key="remix_output_name",
+        help="Để trống thì dùng tên tự động (remix_01, remix_02, ...).",
+    )
+
     run_clicked = st.button("Tạo biến thể", type="primary", disabled=not has_files)
 
     if run_clicked and has_files:
@@ -438,6 +469,8 @@ def render_video_remixer():
 
                 if variant_warnings:
                     st.session_state.variant_warning = " | ".join(variant_warnings)
+
+                made = apply_output_naming(made, output_name)
 
                 if not keep_clips:
                     for c in clips:
@@ -541,6 +574,13 @@ def render_outro_swap():
         )
         strip_audio = st.checkbox("Bỏ âm thanh trong video kết quả", key="outro_strip_audio")
 
+    output_name = st.text_input(
+        "Đặt tên file xuất ra (tuỳ chọn)",
+        placeholder="vd: hieund.apero → hieund.apero.1, hieund.apero.2, ...",
+        key="outro_output_name",
+        help="Để trống thì dùng tên tự động (outro_swap_01, outro_swap_02, ...).",
+    )
+
     run_clicked = st.button("Xử lý", type="primary", disabled=not (has_files and outro_ready))
 
     if run_clicked and has_files and outro_ready:
@@ -578,6 +618,11 @@ def render_outro_swap():
                     threshold, detector, min_scene_len, strip_audio,
                     tail_match_threshold=match_threshold, on_source=on_source,
                 )
+
+                new_paths = apply_output_naming([r["path"] for r in made], output_name)
+                for r, new_p in zip(made, new_paths):
+                    r["path"] = new_p
+
                 status.update(label="Xong!", state="complete", expanded=False)
 
             st.session_state.outro_outputs = made
@@ -704,6 +749,13 @@ def render_logo_cover():
             min_value=1.0, max_value=2.0, value=1.15, step=0.05, key="cover_scale",
         )
 
+    output_name = st.text_input(
+        "Đặt tên file xuất ra (tuỳ chọn)",
+        placeholder="vd: hieund.apero → hieund.apero.1",
+        key="cover_output_name",
+        help="Để trống thì dùng tên tự động.",
+    )
+
     if not logo_file:
         st.warning("Cần tải lên logo/trademark của bạn (ô phía trên) trước khi xử lý.")
     run_clicked = st.button("Xử lý", type="primary", disabled=not logo_file)
@@ -719,6 +771,7 @@ def render_logo_cover():
                     video_path, logo_path, out_path, workdir, t0, bbox,
                     threshold, detector, min_scene_len, tracker_name, cover_scale,
                 )
+            result["out_path"] = apply_output_naming([result["out_path"]], output_name)[0]
             st.session_state.cover_result = result
         except RuntimeError as e:
             st.session_state.cover_error = str(e)
