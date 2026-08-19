@@ -50,6 +50,15 @@ st.markdown(
         font-size: 1.02rem; font-weight: 600;
     }
     hr { margin: 1.6rem 0; }
+
+    /* Thanh menu bên trái: cho ô radio trông giống danh sách điều hướng
+    (nav list) thay vì ô chọn thô. */
+    section[data-testid="stSidebar"] div[role="radiogroup"] label {
+        padding: 0.5rem 0.7rem; border-radius: 8px; width: 100%;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+        background-color: #F0F0F0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -70,10 +79,9 @@ OUTRO_PRESETS = {"Photo app": OUTRO_DIR / "photo.mp4", "Language app": OUTRO_DIR
 
 
 def require_login():
-    """Chặn truy cập nếu chưa nhập đúng mật khẩu chung của team."""
+    """Chặn truy cập nếu chưa nhập đúng mật khẩu chung của team. (Nút đăng
+    xuất nằm ở thanh bên trái, xem render_sidebar_nav().)"""
     if st.session_state.get("authed"):
-        with st.sidebar:
-            st.button("Đăng xuất", on_click=lambda: st.session_state.pop("authed", None), key="logout_btn")
         return
 
     correct_password = st.secrets.get("APP_PASSWORD")
@@ -540,8 +548,22 @@ def render_outro_swap():
 
 check_ffmpeg()
 
-tab_remix, tab_outro = st.tabs(["🎬 Video Remixer", "✂️ Cắt & Gắn Outro"])
-with tab_remix:
-    render_video_remixer()
-with tab_outro:
-    render_outro_swap()
+# Danh sách công cụ hiện trên thanh menu bên trái — thêm công cụ mới sau này
+# chỉ cần thêm 1 dòng vào đây (nhãn hiện trên menu -> hàm render tương ứng),
+# không cần sửa gì chỗ khác.
+PAGES = {
+    "🎬  Video Remixer": render_video_remixer,
+    "✂️  Cắt & Gắn Outro": render_outro_swap,
+}
+
+with st.sidebar:
+    st.markdown("## 🧰 Video Tools")
+    st.caption("Bộ công cụ nội bộ Apero")
+    choice = st.radio(
+        "Công cụ", list(PAGES.keys()), label_visibility="collapsed", key="nav_choice",
+    )
+    st.divider()
+    st.caption("🔓 Đã đăng nhập")
+    st.button("Đăng xuất", on_click=lambda: st.session_state.pop("authed", None), key="logout_btn")
+
+PAGES[choice]()
