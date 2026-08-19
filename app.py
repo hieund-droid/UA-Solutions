@@ -100,6 +100,10 @@ st.markdown(
         display: flex; flex-direction: column; min-height: 100vh;
     }
     .st-key-sidebar_footer { margin-top: auto; }
+
+    /* Chuyển mượt khi ảnh xem trước outro đổi giữa mờ (không được chọn) và
+    rõ (đang chọn), thay vì đổi ngay lập tức. */
+    [data-testid="stImage"] img { transition: filter 0.25s ease, opacity 0.25s ease; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -141,7 +145,7 @@ def _enforce_single_outro_tick(category, just_ticked_name, all_names):
 
 
 @st.cache_data(show_spinner=False)
-def _outro_preview(path_str, mtime, max_width=220):
+def _outro_preview(path_str, mtime, max_width=120):
     """Ảnh thumbnail (RGB, đã thu nhỏ) + thời lượng của 1 outro — cache theo
     (đường dẫn, thời điểm sửa file) để KHÔNG phải đọc lại video/gọi ffprobe
     mỗi khi trang tự load lại (vd tích ô khác, đổi loại outro...). Thu nhỏ
@@ -159,6 +163,14 @@ def _outro_preview(path_str, mtime, max_width=220):
         thumb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     duration = core.ffprobe_info(path)["duration"]
     return thumb, duration
+
+
+@st.cache_data(show_spinner=False)
+def _outro_duration(path_str, mtime):
+    """Chỉ lấy thời lượng (không kèm thumbnail) — cache riêng để dùng ở mục
+    quản lý (hiển thị video thật, không cần ảnh xem trước) mà vẫn tránh gọi
+    lại ffprobe mỗi khi trang tự load lại."""
+    return core.ffprobe_info(Path(path_str))["duration"]
 
 
 def _fade_thumb(thumb, amount=0.7):
@@ -584,11 +596,31 @@ def render_outro_swap():
                 cols = st.columns(4)
                 for idx, f in enumerate(existing):
                     with cols[idx % 4]:
-                        thumb, dur = _outro_preview(str(f), f.stat().st_mtime)
-                        if thumb is not None:
-                            st.image(thumb, use_container_width=True)
-                        st.caption(f"{f.stem} ({dur:.1f}s)")
-                        if st.button("🗑️ Xoá", key=f"del_outro_{category}_{f.name}", use_container_width=True):
+                        # Mục quản lý xem lại được toàn bộ video (đúng chất
+                        # lượng gốc), KHÁC với ảnh nhỏ ở mục tích chọn bên
+                        # dưới (cố tình thu nhỏ để thao tác nhanh, không lag).
+                        st.video(str(f))
+                        dur = _outro_duration(str(f), f.stat().st_mtime)
+                        st.caption(f"{dur:.1f}s")
+                        new_name = st.text_input(
+                            "Tên", value=f.stem, key=f"rename_outro_{category}_{f.name}",
+                            label_visibility="collapsed",
+                        )
+                        rcol, dcol = st.columns(2)
+                        if rcol.button("✏️ Đổi tên", key=f"rename_btn_{category}_{f.name}", use_container_width=True):
+                            clean_name = _sanitize_name_prefix(new_name)
+                            if not clean_name:
+                                st.error("Tên không được để trống.")
+                            elif clean_name == f.stem:
+                                st.info("Tên không đổi.")
+                            else:
+                                new_path = f.parent / f"{clean_name}{f.suffix}"
+                                if new_path.exists():
+                                    st.error(f"Đã có outro tên '{clean_name}' rồi, chọn tên khác.")
+                                else:
+                                    f.rename(new_path)
+                                    st.rerun()
+                        if dcol.button("🗑️ Xoá", key=f"del_outro_{category}_{f.name}", use_container_width=True):
                             f.unlink(missing_ok=True)
                             st.rerun()
             else:
