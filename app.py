@@ -127,6 +127,30 @@ def _list_outros(category):
     files = [f for ext in ("*.mp4", "*.mov", "*.mkv") for f in d.glob(ext)]
     return sorted(files, key=lambda p: p.name.lower())
 
+
+def _enforce_single_outro_tick(category, just_ticked_name, all_names):
+    """Tích 1 outro mới thì TỰ BỎ TÍCH các outro khác cùng loại — mô phỏng
+    chọn kiểu radio (chỉ 1 cái được chọn) nhưng vẫn giữ được lưới thumbnail
+    tự do thay vì dùng st.radio (không chèn ảnh theo từng ô được)."""
+    if not st.session_state.get(f"outro_tick_{category}_{just_ticked_name}"):
+        return
+    for name in all_names:
+        if name != just_ticked_name:
+            st.session_state[f"outro_tick_{category}_{name}"] = False
+
+
+@st.cache_data(show_spinner=False)
+def _outro_preview(path_str, mtime):
+    """Ảnh thumbnail (RGB) + thời lượng của 1 outro — cache theo (đường dẫn,
+    thời điểm sửa file) để KHÔNG phải đọc lại video/gọi ffprobe mỗi khi
+    trang tự load lại (vd tích ô khác, đổi loại outro...), tránh giật/lag
+    khi thao tác. File đổi nội dung (mtime đổi) sẽ tự tính lại đúng."""
+    path = Path(path_str)
+    frame = core._grab_frame_bgr(path, 0.3)
+    thumb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if frame is not None else None
+    duration = core.ffprobe_info(path)["duration"]
+    return thumb, duration
+
 # Mật khẩu chung chặn người lạ — đặt trong .streamlit/secrets.toml (máy này)
 # hoặc mục "Secrets" của Streamlit Cloud (lúc deploy), KHÔNG viết thẳng vào
 # code/git. Dạng: APP_PASSWORD = "..."
@@ -541,10 +565,9 @@ def render_outro_swap():
                 cols = st.columns(4)
                 for idx, f in enumerate(existing):
                     with cols[idx % 4]:
-                        frame = core._grab_frame_bgr(f, 0.3)
-                        if frame is not None:
-                            st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
-                        dur = core.ffprobe_info(f)["duration"]
+                        thumb, dur = _outro_preview(str(f), f.stat().st_mtime)
+                        if thumb is not None:
+                            st.image(thumb, use_container_width=True)
                         st.caption(f"{f.stem} ({dur:.1f}s)")
                         if st.button("🗑️ Xoá", key=f"del_outro_{category}_{f.name}", use_container_width=True):
                             f.unlink(missing_ok=True)
@@ -589,22 +612,24 @@ def render_outro_swap():
     if not available_outros:
         st.warning(f"Chưa có outro nào cho '{outro_category}' — mở mục 'Quản lý outro của tôi' ở trên để thêm.")
     else:
-        st.write(f"Tích chọn ĐÚNG 1 outro muốn dùng cho '{outro_category}':")
+        st.write(f"Tích chọn outro muốn dùng cho '{outro_category}' (tích cái khác sẽ tự bỏ tích cái cũ):")
+        all_names = [f.name for f in available_outros]
         cols = st.columns(4)
         picked = []
         for idx, f in enumerate(available_outros):
             with cols[idx % 4]:
-                frame = core._grab_frame_bgr(f, 0.3)
-                if frame is not None:
-                    st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
-                dur = core.ffprobe_info(f)["duration"]
-                if st.checkbox(f"{f.stem} ({dur:.1f}s)", key=f"outro_tick_{outro_category}_{f.name}"):
+                thumb, dur = _outro_preview(str(f), f.stat().st_mtime)
+                if thumb is not None:
+                    st.image(thumb, use_container_width=True)
+                if st.checkbox(
+                    f"{f.stem} ({dur:.1f}s)", key=f"outro_tick_{outro_category}_{f.name}",
+                    on_change=_enforce_single_outro_tick,
+                    args=(outro_category, f.name, all_names),
+                ):
                     picked.append(f)
 
         if len(picked) == 0:
             st.warning("Chưa tích chọn outro nào.")
-        elif len(picked) > 1:
-            st.error(f"Chỉ được chọn ĐÚNG 1 outro — đang tích {len(picked)} cái, bỏ tích bớt để tiếp tục.")
         else:
             chosen_outro_path = picked[0]
 
