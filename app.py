@@ -6,8 +6,14 @@
 
   ✂️ Cắt & Gắn Outro — tải lên nhiều video của ĐỐI THỦ (có outro/CTA giống
      nhau ở cuối), tự động cắt bỏ outro đó và gắn outro của MÌNH vào thay
-     thế, giữ nguyên nội dung gốc — không xáo trộn/ghép gì. Đây là tính
-     năng khác biệt hoàn toàn với Video Remixer, chỉ dùng chung giao diện.
+     thế, giữ nguyên nội dung gốc — không xáo trộn/ghép gì.
+
+  🚫 Che Logo Đối Thủ — khoanh vùng logo/chữ thương hiệu đối thủ ở 1 khung
+     hình, tool tự bám theo (object tracking) và vẽ đè logo của bạn lên
+     đúng vị trí trong phạm vi 1 cảnh liên tục.
+
+  Cả 3 tính năng khác biệt hoàn toàn về mục đích/logic, chỉ dùng chung giao
+  diện app.
 """
 
 import random
@@ -16,11 +22,14 @@ import tempfile
 import uuid
 from pathlib import Path
 
+import cv2
 import streamlit as st
-from streamlit_option_menu import option_menu
+from PIL import Image
+from streamlit_cropper import st_cropper
 
 import remix_core as core
 import outro_core
+import logo_cover_core
 
 st.set_page_config(page_title="Video Tools", page_icon="🎬", layout="wide")
 
@@ -52,12 +61,33 @@ st.markdown(
     }
     hr { margin: 1.6rem 0; }
 
-    /* Ghim khối tài khoản/đăng xuất xuống cuối thanh bên trái, dù menu phía
-    trên có bao nhiêu mục cũng không đẩy nó lên theo. */
-    section[data-testid="stSidebar"] > div:first-child {
-        display: flex; flex-direction: column; height: 100vh;
+    /* Thanh menu bên trái: cho ô radio trông giống danh sách điều hướng,
+    tô nền đen cho mục đang chọn — chỉ đổi màu nền/chữ, KHÔNG đụng tới
+    font-family, để chữ tiếng Việt luôn hiển thị đúng. */
+    section[data-testid="stSidebar"] div[role="radiogroup"] label {
+        padding: 0.55rem 0.7rem; border-radius: 8px; width: 100%; margin-bottom: 2px;
     }
-    .st-key-sidebar_footer { margin-top: auto; padding-bottom: 1rem; }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+        background-color: #F0F0F0;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
+        background-color: #111111;
+    }
+    section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
+        color: #FFFFFF;
+    }
+
+    /* Ghim khối tài khoản/đăng xuất xuống cuối thanh bên trái. Dùng cả 2
+    cách (flex trên khối cha + sticky trên chính khối footer) để tăng khả
+    năng tương thích, vì cấu trúc DOM nội bộ của Streamlit có thể đổi giữa
+    các phiên bản. */
+    section[data-testid="stSidebar"] > div:first-child {
+        display: flex; flex-direction: column; min-height: 100vh;
+    }
+    .st-key-sidebar_footer {
+        margin-top: auto; position: sticky; bottom: 0;
+        background-color: #FFFFFF; padding-top: 1rem; padding-bottom: 1rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -553,39 +583,154 @@ def render_outro_swap():
         render_results_grid([r["path"] for r in st.session_state.outro_outputs], "outro_dl")
 
 
+def render_logo_cover():
+    """Tab 'Che Logo Đối Thủ' — khoanh vùng logo/chữ thương hiệu đối thủ ở 1
+    khung hình, tool bám theo (object tracking) trong phạm vi 1 cảnh liên
+    tục và vẽ đè logo của bạn lên đúng vị trí + kích thước đã bám được.
+
+    Đã thử nghiệm và bỏ hướng tự động hoàn toàn (không biết trước watermark
+    là gì) vì không khả thi với video quay tay/cắt cảnh nhanh — xem
+    logo_cover_core.py để biết chi tiết lý do."""
+    st.title("🚫 Che Logo Đối Thủ")
+    st.caption(
+        "Khoanh vùng logo/chữ thương hiệu đối thủ ở 1 khung hình — tool tự "
+        "bám theo (object tracking) và vẽ đè logo của bạn lên đúng vị trí."
+    )
+    st.info(
+        "⚠️ Giới hạn: tool chỉ bám theo trong phạm vi **1 cảnh liên tục** — "
+        "nếu video cắt sang cảnh khác, cần khoanh vùng lại riêng cho cảnh "
+        "đó (chạy tool thêm lần nữa). Đây là đánh đổi để đảm bảo không che "
+        "sai chỗ, thay vì cố tự động hoàn toàn (đã thử, không chính xác)."
+    )
+
+    for key, default in [("cover_result", None), ("cover_error", None)]:
+        if key not in st.session_state:
+            st.session_state[key] = default
+
+    uploaded = st.file_uploader(
+        "Video đối thủ (1 video)", type=["mp4", "mov", "mkv", "avi", "webm"],
+        accept_multiple_files=False, key="cover_uploader",
+    )
+    logo_file = st.file_uploader(
+        "Logo/trademark của bạn (khuyến khích ảnh PNG nền trong suốt để che đẹp hơn)",
+        type=["png", "jpg", "jpeg"], key="cover_logo_uploader",
+    )
+
+    if not uploaded:
+        st.caption("Tải video lên để bắt đầu.")
+        return
+
+    sig = (uploaded.name, uploaded.size)
+    if st.session_state.get("cover_video_sig") != sig:
+        workdir, paths = save_uploads([uploaded], prefix="logo_cover_")
+        st.session_state.cover_video_sig = sig
+        st.session_state.cover_workdir = workdir
+        st.session_state.cover_video_path = paths[0]
+        st.session_state.cover_result = None
+        st.session_state.cover_error = None
+    workdir = st.session_state.cover_workdir
+    video_path = st.session_state.cover_video_path
+
+    info = core.ffprobe_info(video_path)
+    duration = info["duration"]
+
+    t0 = st.slider(
+        "Kéo tới giây đang thấy RÕ logo/chữ cần che", 0.0, max(duration, 0.1),
+        min(2.0, duration), 0.1, key="cover_t0",
+    )
+    frame_bgr = core._grab_frame_bgr(video_path, t0)
+    if frame_bgr is None:
+        st.error("Không đọc được khung hình tại giây này, thử kéo sang mốc khác.")
+        return
+    pil_img = Image.fromarray(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+
+    st.write("Kéo/chỉnh khung đỏ bên dưới cho vừa khít logo/chữ cần che:")
+    box = st_cropper(
+        pil_img, return_type="box", box_color="#FF0000",
+        key=f"cropper_{sig[0]}_{sig[1]}",
+    )
+    bbox = (int(box["left"]), int(box["top"]), int(box["width"]), int(box["height"]))
+
+    with st.expander("Tuỳ chọn nâng cao (không cần đụng vào nếu không rõ)"):
+        detector = st.selectbox(
+            "Cách nhận diện điểm cắt cảnh", ["content", "adaptive"], key="cover_detector",
+        )
+        threshold = st.number_input(
+            "Độ nhạy cắt cảnh", min_value=1.0, max_value=100.0, value=27.0, step=1.0,
+            key="cover_threshold",
+        )
+        min_scene_len = st.number_input(
+            "Độ dài scene tối thiểu (giây)", min_value=0.0, value=0.5, step=0.1,
+            key="cover_min_scene_len",
+        )
+        tracker_name = st.selectbox(
+            "Thuật toán bám theo", list(logo_cover_core.TRACKER_FACTORIES.keys()),
+            key="cover_tracker",
+        )
+        cover_scale = st.slider(
+            "Độ phóng to logo che (đảm bảo che kín hoàn toàn, không hở viền)",
+            min_value=1.0, max_value=2.0, value=1.15, step=0.05, key="cover_scale",
+        )
+
+    if not logo_file:
+        st.warning("Cần tải lên logo/trademark của bạn (ô phía trên) trước khi xử lý.")
+    run_clicked = st.button("Xử lý", type="primary", disabled=not logo_file)
+
+    if run_clicked and logo_file:
+        logo_path = workdir / f"logo_{uuid.uuid4().hex[:8]}{Path(logo_file.name).suffix}"
+        logo_path.write_bytes(logo_file.getvalue())
+        out_path = workdir / f"covered_{uuid.uuid4().hex[:8]}.mp4"
+        st.session_state.cover_error = None
+        try:
+            with st.spinner("Đang bám theo & che logo — có thể mất 1-2 phút..."):
+                result = logo_cover_core.cover_logo_in_scene(
+                    video_path, logo_path, out_path, workdir, t0, bbox,
+                    threshold, detector, min_scene_len, tracker_name, cover_scale,
+                )
+            st.session_state.cover_result = result
+        except RuntimeError as e:
+            st.session_state.cover_error = str(e)
+
+    if st.session_state.cover_error:
+        st.error(f"Xử lý thất bại: {st.session_state.cover_error}")
+
+    if st.session_state.cover_result:
+        r = st.session_state.cover_result
+        st.subheader("Kết quả")
+        msg = (
+            f"Đã che từ giây {r['covered_start']:.1f}s đến {r['covered_end']:.1f}s "
+            f"(cảnh này kéo dài {r['scene_start']:.1f}s–{r['scene_end']:.1f}s)."
+        )
+        if r["lost_forward"] or r["lost_backward"]:
+            st.warning(
+                msg + " ⚠️ Bị MẤT DẤU trước khi hết cảnh — phần còn lại của cảnh "
+                "này CHƯA được che, khoanh vùng lại riêng cho đoạn đó nếu cần."
+            )
+        else:
+            st.success(msg + " Che trọn vẹn cả cảnh, không bị mất dấu giữa chừng.")
+        render_results_grid([r["out_path"]], "cover_dl")
+
+
 check_ffmpeg()
 
 # Danh sách công cụ hiện trên thanh menu bên trái — thêm công cụ mới sau này
-# chỉ cần thêm 1 dòng vào đây (nhãn -> (hàm render, icon Bootstrap Icons,
-# xem đầy đủ tên icon tại https://icons.getbootstrap.com/), không cần sửa
-# gì chỗ khác.
+# chỉ cần thêm 1 dòng vào đây (nhãn hiện trên menu -> hàm render tương ứng),
+# không cần sửa gì chỗ khác.
 PAGES = {
-    "Video Remixer": (render_video_remixer, "film"),
-    "Cắt & Gắn Outro": (render_outro_swap, "scissors"),
+    "🎬  Video Remixer": render_video_remixer,
+    "✂️  Cắt & Gắn Outro": render_outro_swap,
+    "🚫  Che Logo Đối Thủ": render_logo_cover,
 }
 
 with st.sidebar:
     st.markdown("## 🧰 Video Tools")
     st.caption("Bộ công cụ nội bộ Apero")
-    choice = option_menu(
-        menu_title=None,
-        options=list(PAGES.keys()),
-        icons=[icon for _, icon in PAGES.values()],
-        default_index=0,
-        key="nav_menu",
-        styles={
-            "container": {"padding": "0", "background-color": "transparent"},
-            "icon": {"color": "#111111", "font-size": "16px"},
-            "nav-link": {
-                "font-size": "15px", "text-align": "left", "margin": "2px 0",
-                "border-radius": "8px", "--hover-color": "#F0F0F0",
-            },
-            "nav-link-selected": {"background-color": "#111111", "color": "white"},
-        },
+    choice = st.radio(
+        "Công cụ", list(PAGES.keys()), label_visibility="collapsed", key="nav_choice",
     )
     with st.container(key="sidebar_footer"):
         st.divider()
         st.caption("🔓 Đã đăng nhập")
         st.button("Đăng xuất", on_click=lambda: st.session_state.pop("authed", None), key="logout_btn")
 
-PAGES[choice][0]()
+PAGES[choice]()

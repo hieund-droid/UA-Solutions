@@ -1,5 +1,5 @@
 streamlit
 scenedetect
-opencv-python-headless
+opencv-contrib-python-headless
 numpy
-streamlit-option-menu
+streamlit-cropper
