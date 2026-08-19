@@ -145,7 +145,7 @@ def _enforce_single_outro_tick(category, just_ticked_name, all_names):
 
 
 @st.cache_data(show_spinner=False)
-def _outro_preview(path_str, mtime, max_width=320):
+def _outro_preview(path_str, mtime, max_width=190):
     """Ảnh thumbnail (RGB, đã thu nhỏ) + thời lượng của 1 outro — cache theo
     (đường dẫn, thời điểm sửa file) để KHÔNG phải đọc lại video/gọi ffprobe
     mỗi khi trang tự load lại (vd tích ô khác, đổi loại outro...). Thu nhỏ
@@ -668,10 +668,10 @@ def render_outro_swap():
         selected_name = next(
             (n for n in all_names if st.session_state.get(f"outro_tick_{outro_category}_{n}")), None,
         )
-        cols = st.columns(4)
+        cols = st.columns(6)
         picked = []
         for idx, f in enumerate(available_outros):
-            with cols[idx % 4]:
+            with cols[idx % 6]:
                 thumb, dur = _outro_preview(str(f), f.stat().st_mtime)
                 if selected_name is not None and f.name != selected_name:
                     thumb = _fade_thumb(thumb)  # KHONG duoc chon -> lam mo trang di, noi bat cai dang chon
