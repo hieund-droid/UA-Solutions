@@ -77,17 +77,18 @@ st.markdown(
         color: #FFFFFF;
     }
 
-    /* Ghim khối tài khoản/đăng xuất xuống cuối thanh bên trái. Dùng cả 2
-    cách (flex trên khối cha + sticky trên chính khối footer) để tăng khả
-    năng tương thích, vì cấu trúc DOM nội bộ của Streamlit có thể đổi giữa
-    các phiên bản. */
-    section[data-testid="stSidebar"] > div:first-child {
-        display: flex; flex-direction: column; min-height: 100vh;
+    /* Ghim khối tài khoản/đăng xuất xuống cuối thanh bên trái. Nhắm vào
+    NHIỀU lớp bọc khác nhau (tên có thể đổi giữa các bản Streamlit) để tăng
+    khả năng ăn đúng — lớp nào không tồn tại thì trình duyệt bỏ qua, không
+    ảnh hưởng gì. */
+    section[data-testid="stSidebar"],
+    section[data-testid="stSidebar"] > div,
+    [data-testid="stSidebarContent"],
+    [data-testid="stSidebarUserContent"] {
+        display: flex; flex-direction: column; height: 100%;
     }
-    .st-key-sidebar_footer {
-        margin-top: auto; position: sticky; bottom: 0;
-        background-color: #FFFFFF; padding-top: 1rem; padding-bottom: 1rem;
-    }
+    [data-testid="stSidebarUserContent"] { flex: 1 1 auto; }
+    .st-key-sidebar_footer { margin-top: auto; }
     </style>
     """,
     unsafe_allow_html=True,

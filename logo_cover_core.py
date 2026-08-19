@@ -78,11 +78,47 @@ def _overlay_logo(frame, logo, bbox, cover_scale=1.15):
     return frame
 
 
-def _track_range(video_path, seed_frame_idx, bbox, frame_indices, tracker_factory):
+def _patch_gray(frame, bbox, size):
+    """Cắt vùng `bbox` trong `frame`, chuyển xám, co về đúng `size` (w,h)
+    để so sánh được với patch tham chiếu dù kích thước tracker trả về có
+    đổi chút ít qua từng khung."""
+    x, y, w, h = bbox
+    fh, fw = frame.shape[:2]
+    x0, y0 = max(x, 0), max(y, 0)
+    x1, y1 = min(x + w, fw), min(y + h, fh)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    patch = frame[y0:y1, x0:x1]
+    gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+    return cv2.resize(gray, size, interpolation=cv2.INTER_AREA)
+
+
+def _patch_similarity(ref_gray, frame, bbox):
+    """So khớp vùng đang bám theo với patch GỐC (lúc mới khoanh vùng) —
+    trả về hệ số 0..1 (1 = giống hệt). Dùng để tự phát hiện trường hợp
+    OpenCV tracker báo "vẫn bám được" (update() trả True) nhưng thực chất
+    đã bám nhầm sang nền tĩnh phía sau vì watermark đã biến mất khỏi khung
+    hình — hay gặp với watermark ẩn/hiện chập chờn chứ không phải lúc nào
+    cũng hiển thị suốt cảnh."""
+    h, w = ref_gray.shape
+    patch = _patch_gray(frame, bbox, (w, h))
+    if patch is None:
+        return -1.0
+    res = cv2.matchTemplate(patch, ref_gray, cv2.TM_CCOEFF_NORMED)
+    return float(res[0, 0])
+
+
+def _track_range(video_path, seed_frame_idx, bbox, frame_indices, tracker_factory,
+                  similarity_threshold=0.4):
     """Bám theo `bbox` xuất phát từ khung `seed_frame_idx`, dọc theo dãy chỉ
     số khung `frame_indices` (đã sắp đúng thứ tự cần đọc — tăng dần cho
     chiều tiến, giảm dần cho chiều lùi). Đọc tuần tự bằng cv2 (nhanh hơn
-    nhiều so với seek từng khung). Dừng ngay khi tracker báo mất dấu.
+    nhiều so với seek từng khung).
+
+    Dừng khi: (a) OpenCV tracker tự báo mất dấu, HOẶC (b) vùng đang bám
+    theo không còn giống patch gốc đủ nhiều (xem _patch_similarity) — vế
+    (b) quan trọng vì tracker CSRT/KCF của OpenCV vẫn có thể báo "còn bám
+    được" dù thực chất đã trôi sang nền tĩnh khi vật thể gốc biến mất.
 
     Trả về dict {frame_idx: (x,y,w,h)}."""
     cap = cv2.VideoCapture(str(video_path))
@@ -98,6 +134,7 @@ def _track_range(video_path, seed_frame_idx, bbox, frame_indices, tracker_factor
     tracker = tracker_factory()
     tracker.init(frame, bbox)
     tracked[start_idx] = bbox
+    ref_gray = _patch_gray(frame, bbox, (max(bbox[2], 1), max(bbox[3], 1)))
 
     for idx in frame_indices[1:]:
         ok, frame = cap.read()
@@ -106,7 +143,10 @@ def _track_range(video_path, seed_frame_idx, bbox, frame_indices, tracker_factor
         ok_t, box = tracker.update(frame)
         if not ok_t:
             break
-        tracked[idx] = tuple(int(round(v)) for v in box)
+        box = tuple(int(round(v)) for v in box)
+        if ref_gray is not None and _patch_similarity(ref_gray, frame, box) < similarity_threshold:
+            break
+        tracked[idx] = box
 
     cap.release()
     return tracked
