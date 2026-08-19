@@ -602,13 +602,25 @@ def render_logo_cover():
     là gì) vì không khả thi với video quay tay/cắt cảnh nhanh — xem
     logo_cover_core.py để biết chi tiết lý do.
 
-    Hiện đang KHOÁ TẠM (xem LOGO_COVER_LOCKED ở đầu file) — code phía dưới
-    vẫn hoạt động đầy đủ, chỉ đang ẩn sau màn hình "sắp ra mắt"."""
-    if LOGO_COVER_LOCKED:
+    Hiện đang KHOÁ TẠM (xem LOGO_COVER_LOCKED ở đầu file) cho người dùng
+    thường — code phía dưới vẫn hoạt động đầy đủ, chỉ ẩn sau màn hình "sắp
+    ra mắt". Có ô nhỏ cuối trang để người test nội bộ (biết mật khẩu riêng
+    DEV_UNLOCK_PASSWORD) mở khoá thử nghiệm mà không cần tắt khoá chung."""
+    if LOGO_COVER_LOCKED and not st.session_state.get("logo_cover_unlocked"):
         st.title("🚫 Che Logo Đối Thủ")
         st.markdown("### 🚧 Skill upcoming...")
         st.image(COMING_SOON_GIF, use_container_width=True)
         st.caption("Đang hoàn thiện thêm — quay lại sau nhé ☕")
+
+        with st.expander("🔧 Dành cho người test nội bộ"):
+            dev_pwd = st.text_input("Mật khẩu test", type="password", key="logo_cover_dev_pwd")
+            if st.button("Mở khoá để test", key="logo_cover_unlock_btn"):
+                correct = st.secrets.get("DEV_UNLOCK_PASSWORD")
+                if correct and dev_pwd == correct:
+                    st.session_state["logo_cover_unlocked"] = True
+                    st.rerun()
+                else:
+                    st.error("Sai mật khẩu test.")
         return
 
     st.title("🚫 Che Logo Đối Thủ")
