@@ -1,0 +1,13 @@
+This repo is a FRESH COPY of the Apero template (someone clicked "Use this
+template" on GitHub) and is NOT a real project yet.
+
+→ Claude Code: before doing anything the user asked, run the bootstrap in
+  BOOTSTRAP.md. It lays down the chosen stack, builds the project rulebook,
+  turns the guardrails on, and deletes this file.
+
+→ Humans: open this repo in Claude Code and say "bootstrap this project",
+  or read BOOTSTRAP.md.
+
+(This file is removed automatically once the project is bootstrapped. It is
+present in the upstream hq-apero-template repo too — there, ignore it; that
+repo is the template itself, not a project.)

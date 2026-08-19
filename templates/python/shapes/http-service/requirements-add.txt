@@ -1,0 +1,6 @@
+# HTTP-service-only dependencies. APPEND these lines to the project's
+# requirements.txt when you convert the project to an HTTP service.
+# Pinned with `==` — bump in a dedicated PR.
+
+fastapi==0.115.5
+uvicorn[standard]==0.32.1

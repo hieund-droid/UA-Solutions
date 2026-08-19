@@ -1,0 +1,40 @@
+# --- Secrets / credentials (DO NOT REMOVE) ---
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+id_rsa*
+service-account*.json
+credentials.json
+secrets/
+.aws/
+.gcp/
+
+# --- Node ---
+node_modules/
+dist/
+build/
+.next/
+coverage/
+*.tsbuildinfo
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- Logs / scratch ---
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+scratch/
+tmp/
+
+# --- Runtime state (key-value JSON — see CLAUDE.md "Storage") ---
+output/

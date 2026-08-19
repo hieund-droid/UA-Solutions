@@ -1,0 +1,33 @@
+{
+  "//": "Recommended hooks shipped with apero-vibecode. Users get these by installing the plugin. See https://docs.claude.com/en/docs/claude-code/hooks.",
+  "PreToolUse": [
+    {
+      "matcher": "Write|Edit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scan-edit-for-secrets.sh"
+        }
+      ]
+    },
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/guard-bash.sh"
+        }
+      ]
+    }
+  ],
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/load-apero-context.sh"
+        }
+      ]
+    }
+  ]
+}

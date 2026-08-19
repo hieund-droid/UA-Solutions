@@ -1,0 +1,47 @@
+# hq-apero-template — root .claudeignore
+# Tells Claude Code what NOT to read across the whole repo.
+# Goal: protect secrets, skip lockfiles, skip build artifacts.
+
+# === Secrets / credentials — never read ===
+.env
+.env.*
+*.pem
+*.key
+*.p12
+service-account*.json
+credentials.json
+secrets/
+
+# === Lockfiles — readable, but big and rarely useful ===
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+uv.lock
+poetry.lock
+
+# === Build artifacts / dependency trees ===
+node_modules/
+dist/
+dist-ssr/
+build/
+.next/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage/
+htmlcov/
+
+# === Vendored / generated ===
+vendor/
+*.min.js
+*.min.css
+
+# === Runtime state (key-value JSON — see CLAUDE.md "Storage") ===
+output/
+
+# === Human-only docs (save tokens — AI does not need to read these) ===
+docs/vibecoder-survival*.md
+docs/security-training*.md

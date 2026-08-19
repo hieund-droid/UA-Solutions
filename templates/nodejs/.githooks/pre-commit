@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — Apero standard pre-commit gate.
+#
+# Two blocking jobs, one best-effort auto-fix:
+#   1. Secret scan        — block staged files with secret-looking strings.
+#   2. Dangerous patterns — block staged files with eval/exec/dangerouslySetInnerHTML/raw-SQL-interp.
+#   3. Format auto-fix    — run the project's formatter on staged files; never blocks.
+#
+# Runs on STAGED files only. Stays under ~1s on typical commits.
+#
+# Bypass (only if you are SURE the match is a false positive):
+#     git commit --no-verify
+# Then ping #devops with the file path so the rule gets tuned for everyone.
+
+set -euo pipefail
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$STAGED" ] && exit 0
+
+FAILED=0
+RED=$'\033[31m'
+YELLOW=$'\033[33m'
+RESET=$'\033[0m'
+
+block() {
+  printf '%s[apero] BLOCKED:%s %s\n' "$RED" "$RESET" "$1" >&2
+  printf '  file:  %s\n  match: %s\n' "$2" "$3" >&2
+  FAILED=1
+}
+
+# ----- 1. Secret scan -----
+SECRET_PATTERNS=(
+  'AKIA[0-9A-Z]{16}'                                 # AWS access key
+  'sk_(live|test)_[A-Za-z0-9]{24,}'                  # Stripe key
+  'ghp_[A-Za-z0-9]{36}'                              # GitHub PAT (classic)
+  'github_pat_[A-Za-z0-9_]{82}'                      # GitHub PAT (fine-grained)
+  'xox[baprs]-[A-Za-z0-9-]+'                         # Slack token
+  'AIza[0-9A-Za-z_-]{35}'                            # Google API key
+  '-----BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY-----' # PEM private key
+)
+
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  for pat in "${SECRET_PATTERNS[@]}"; do
+    match=$(grep -nE "$pat" "$f" 2>/dev/null | head -1) || true
+    [ -n "$match" ] && block "secret-looking string" "$f" "$match"
+  done
+done <<< "$STAGED"
+
+# ----- 2. Dangerous pattern scan -----
+DANGER_PATTERNS=(
+  '\beval[[:space:]]*\('
+  '\bexec[[:space:]]*\('
+  '\bnew[[:space:]]+Function[[:space:]]*\('
+  'dangerouslySetInnerHTML'
+  'f"(SELECT|INSERT|UPDATE|DELETE|DROP)[^"]*\{'
+  "f'(SELECT|INSERT|UPDATE|DELETE|DROP)[^']*\\{"
+  '`(SELECT|INSERT|UPDATE|DELETE|DROP)[^`]*\$\{'
+)
+
+while IFS= read -r f; do
+  case "$f" in
+    *test*|*spec*|.githooks/*|*.lock|*.min.*|*pnpm-lock*|*.bundle.*|*.md) continue ;;
+  esac
+  [ -f "$f" ] || continue
+  for pat in "${DANGER_PATTERNS[@]}"; do
+    match=$(grep -nE "$pat" "$f" 2>/dev/null | head -1) || true
+    [ -n "$match" ] && block "dangerous pattern" "$f" "$match"
+  done
+done <<< "$STAGED"
+
+# ----- 2b. Secret-assignment scan (catches no-prefix random keys) -----
+# Catches `API_KEY = "kg7Hd9SxQ..."`-style hardcoded assignments where the value
+# itself has no recognizable prefix. Case-insensitive via grep -iE. 20-char
+# minimum so obvious placeholders (`api_key = "changeme"`) don't fire.
+ASSIGNMENT_PATTERNS=(
+  '(api[_-]?key|apikey|secret(_key)?|password|passwd|access[_-]?token|auth[_-]?token|bearer[_-]?token|client[_-]?secret|private[_-]?key)[[:space:]]*[:=][[:space:]]*["'\''][^"'\'']{20,}["'\'']'
+)
+while IFS= read -r f; do
+  case "$f" in
+    *test*|*spec*|.githooks/*|*.lock|*.min.*|*pnpm-lock*|*.bundle.*|*.env.example|*.md) continue ;;
+  esac
+  [ -f "$f" ] || continue
+  for pat in "${ASSIGNMENT_PATTERNS[@]}"; do
+    match=$(grep -niE "$pat" "$f" 2>/dev/null | head -1) || true
+    [ -n "$match" ] && block "secret-shaped value assigned to a key-named variable" "$f" "$match"
+  done
+done <<< "$STAGED"
+
+if [ "$FAILED" -ne 0 ]; then
+  printf '\n%sTo bypass (only if you are SURE it is a false positive):%s git commit --no-verify\n' "$YELLOW" "$RESET" >&2
+  printf 'Then ping #devops with the file path so the rule gets tuned for everyone.\n' >&2
+  exit 1
+fi
+
+# ----- 3. Format auto-fix (best-effort; never fails the commit) -----
+JS=$(printf '%s\n' "$STAGED" | grep -E '\.(ts|tsx|js|jsx|json)$' || true)
+if [ -n "$JS" ] && [ -x node_modules/.bin/prettier ]; then
+  printf '[apero] prettier --write on staged JS/TS files\n'
+  printf '%s\n' "$JS" | xargs node_modules/.bin/prettier --write --log-level=error >/dev/null 2>&1 || true
+  printf '%s\n' "$JS" | xargs git add
+fi
+
+exit 0

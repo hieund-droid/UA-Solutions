@@ -1,0 +1,61 @@
+# hq-apero-template — root .dockerignore
+# Each template ships its own .dockerignore; this one applies if someone
+# builds from the repo root for any reason.
+
+# === Always exclude ===
+.git
+.gitignore
+.github
+
+# === Secrets / credentials ===
+.env
+.env.*
+*.pem
+*.key
+*.p12
+id_rsa*
+service-account*.json
+credentials.json
+secrets/
+.aws/
+.gcp/
+
+# === Python artifacts ===
+__pycache__
+.venv
+venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+*.egg-info
+
+# === Node artifacts ===
+node_modules
+dist
+dist-ssr
+build
+.next
+*.tsbuildinfo
+
+# === Coverage (any stack) ===
+coverage
+
+# === Editors / OS ===
+.DS_Store
+.idea
+.vscode
+
+# === AI tool state ===
+.claude/
+.cursor/
+
+# === Misc ===
+*.log
+logs/
+scratch/
+tmp/
+
+# === Runtime state (key-value JSON — see CLAUDE.md "Storage") ===
+output/

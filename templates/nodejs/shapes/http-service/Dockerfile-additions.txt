@@ -1,0 +1,5 @@
+# HTTP-service-only Dockerfile additions. APPEND to the project's Dockerfile
+# (just before the final CMD line) when you convert the project to an HTTP
+# service.
+
+EXPOSE 3000

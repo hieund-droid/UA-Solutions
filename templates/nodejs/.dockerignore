@@ -1,0 +1,27 @@
+.git
+.gitignore
+.github
+.env
+.env.*
+*.pem
+*.key
+secrets/
+.aws/
+.gcp/
+
+node_modules
+dist
+build
+.next
+coverage
+*.tsbuildinfo
+
+.DS_Store
+.idea
+.vscode
+
+.claude/
+.cursor/
+
+# Runtime state (key-value JSON — see CLAUDE.md "Storage")
+output/

@@ -1,0 +1,46 @@
+# --- Secrets / credentials (DO NOT REMOVE) ---
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+id_rsa*
+service-account*.json
+credentials.json
+secrets/
+.aws/
+.gcp/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+dist/
+build/
+*.egg-info/
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# --- Logs / scratch ---
+*.log
+logs/
+scratch/
+tmp/
+
+# --- Runtime state (key-value JSON — see CLAUDE.md "Storage") ---
+output/

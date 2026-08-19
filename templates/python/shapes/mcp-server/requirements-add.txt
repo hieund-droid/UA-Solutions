@@ -1,0 +1,7 @@
+# MCP-server-only dependency. APPEND to requirements.txt when you convert
+# the project to an MCP server. Pin to the latest stable at conversion
+# time — check https://pypi.org/project/mcp/ before merging.
+#
+# After appending, run:  python -m pip install -r requirements.txt
+
+mcp==1.0.0

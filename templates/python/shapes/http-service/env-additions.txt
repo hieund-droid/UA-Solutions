@@ -1,0 +1,10 @@
+# HTTP-service-only env vars. APPEND to .env.example (and .env) when you
+# convert the project to an HTTP service.
+
+# --- HTTP ---
+APP_PORT=8000
+
+# --- SSO (hq-apero-sso) ---
+APERO_SSO_ISSUER=https://sso.apero.vn
+APERO_SSO_CLIENT_ID=replace-me
+APERO_SSO_AUDIENCE=replace-me

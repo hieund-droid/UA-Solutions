@@ -1,0 +1,23 @@
+.env
+.env.*
+*.pem
+*.key
+*.p12
+service-account*.json
+credentials.json
+secrets/
+
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+node_modules/
+dist/
+dist-ssr/
+build/
+coverage/
+*.min.js
+*.min.css
+
+# Runtime state (key-value JSON — see CLAUDE.md "Storage")
+output/

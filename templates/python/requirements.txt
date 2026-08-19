@@ -1,0 +1,16 @@
+# Runtime dependencies. Install with:
+#   python -m pip install -r requirements.txt
+#
+# Pinned with `==` so the same code runs the same way on every machine.
+# Bump versions in a dedicated PR — not as a side-effect of unrelated work.
+#
+# This list is shape-agnostic — only what every Apero Python project needs.
+# Shape-specific deps live under shapes/<shape>/requirements-add.txt; append
+# them when you commit to a shape (see shapes/http-service/README.md).
+
+pydantic==2.9.2
+pydantic-settings==2.6.1
+
+# SSO — uncomment + pin once published to the internal mirror, when an
+# http-service shape is applied (auth.py imports it).
+# hq-apero-sso==0.1.0

@@ -1,0 +1,17 @@
+{
+  "name": "apero-vibecode",
+  "version": "0.1.0",
+  "description": "Apero company rules, skills, and security tooling for Claude Code",
+  "author": "Apero DevOps — #devops",
+  "homepage": "https://git.apero.vn/platform/apero-vibecode-plugin",
+  "skills": [
+    "./skills/security-review",
+    "./skills/code-review",
+    "./skills/pre-deploy-check",
+    "./skills/sso-wire-up"
+  ],
+  "agents": [
+    "./agents/apero-security-reviewer.md"
+  ],
+  "hooks": "./hooks/hooks.json"
+}

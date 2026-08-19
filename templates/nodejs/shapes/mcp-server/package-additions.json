@@ -1,0 +1,6 @@
+{
+  "_comment": "MCP-server-only deps. MERGE into the project's package.json dependencies when you convert the project to an MCP server. Pin to the latest published version at conversion time — check https://github.com/modelcontextprotocol/typescript-sdk before merging. After merging, run `pnpm install`.",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

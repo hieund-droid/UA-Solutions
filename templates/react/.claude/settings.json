@@ -1,0 +1,88 @@
+{
+  "permissions": {
+    "deny": [
+      "Write(CLAUDE.AndrejKarpathy.md)",
+      "Edit(CLAUDE.AndrejKarpathy.md)",
+
+      "Bash(rm -rf*)",
+      "Bash(rm -fr*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -fd*)",
+      "Bash(sudo*)",
+      "Bash(chmod 777*)",
+      "Bash(curl * | bash)",
+      "Bash(curl * | sh)",
+      "Bash(wget * | bash)",
+
+      "Bash(npm install*)",
+      "Bash(npm i *)",
+      "Bash(pnpm install*)",
+      "Bash(pnpm add*)",
+      "Bash(yarn install*)",
+      "Bash(yarn add*)",
+      "Bash(npm uninstall*)",
+      "Bash(pnpm remove*)",
+      "Bash(npx -y *)",
+
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(*.pem)",
+      "Read(*.key)",
+      "Read(secrets/**)",
+      "Read(service-account*.json)",
+      "Read(credentials.json)"
+    ],
+    "allow": [
+      "Bash(pnpm run *)",
+      "Bash(pnpm dev)",
+      "Bash(pnpm build)",
+      "Bash(pnpm preview)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm format)",
+      "Bash(npx tsc*)",
+      "Bash(vite*)",
+      "Bash(vitest*)",
+      "Bash(eslint*)",
+      "Bash(prettier*)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git checkout -b*)",
+      "Bash(git branch*)",
+      "Bash(git stash*)",
+      "Bash(ls*)",
+      "Bash(rg*)",
+      "Bash(find*)",
+      "Bash(pwd)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/scan-edit-for-secrets.sh" }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-bash.sh" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/load-apero-context.sh" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+# Apero shared .gitignore patterns — DO NOT remove entries from this list.
+# (Each per-stack .gitignore inlines these patterns.)
+
+# --- Secrets / credentials ---
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+id_rsa*
+service-account*.json
+credentials.json
+secrets/
+.aws/
+.gcp/
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Logs / coverage ---
+*.log
+logs/
+coverage/
+.coverage
+htmlcov/
+
+# --- Local scratch ---
+scratch/
+tmp/
+*.local
+
+# --- Runtime state (key-value JSON — see CLAUDE.md "Storage") ---
+output/

@@ -1,0 +1,68 @@
+# hq-apero-template — root .gitignore
+# Active immediately on `git clone` / fork. Covers everything in this repo:
+# the templates (python / nodejs / react) and the claude-plugin.
+# Per-template .gitignore files exist too so each `templates/<stack>/` stays
+# self-contained when copied into a new project.
+
+# === Secrets / credentials (DO NOT REMOVE) ===
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+id_rsa*
+service-account*.json
+credentials.json
+secrets/
+.aws/
+.gcp/
+
+# === Editors / OS ===
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# === Python (templates/python/) ===
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.egg-info/
+
+# === Node.js / TypeScript (templates/nodejs/, templates/react/) ===
+node_modules/
+dist/
+dist-ssr/
+build/
+.next/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# === Build / coverage (any stack) ===
+coverage/
+
+# === Logs / scratch ===
+*.log
+logs/
+scratch/
+tmp/
+*.local
+
+# === Runtime state (key-value JSON — see CLAUDE.md "Storage") ===
+output/
+
+security-training/*
