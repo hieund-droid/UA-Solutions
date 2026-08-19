@@ -23,30 +23,30 @@ Cách nhận diện outro đối thủ:
   so màu trung bình theo lưới ổn định hơn nhiều mà vẫn phân biệt rõ với nội
   dung video thật (đã kiểm chứng bằng video mẫu thật).
 
-  Video nào không khớp được với video nào khác (vd chỉ tải lên 1 video,
-  nhiều đối thủ khác nhau trong 1 lần, hoặc video đó thực sự không có outro
-  giống các video còn lại) sẽ dùng phương án dự phòng: coi scene cuối cùng
-  (theo PySceneDetect) là outro — kém chắc chắn hơn nên luôn kèm cảnh báo.
+  Tải lên càng nhiều video 1 lúc càng tốt, kể cả trộn lẫn NHIỀU đối thủ/app
+  khác nhau trong cùng 1 lần — thuật toán tự gom nhóm theo từng app riêng
+  biệt (mỗi nhóm so khớp chéo với nhau), không cần tự sắp xếp/lọc trước.
+
+  Video nào không khớp được với video nào khác (vd chỉ tải lên 1 video duy
+  nhất, hoặc không tìm được video nào khác cùng app trong mẻ tải lên) sẽ
+  KHÔNG cắt gì cả, giữ nguyên toàn bộ — chủ động chọn AN TOÀN thay vì đoán
+  liều (vd cắt cảnh cuối cùng): với số lượng lớn video trộn lẫn, rất có thể
+  1 video không khớp được ai đơn giản vì nó KHÔNG HỀ CÓ outro, nên đoán liều
+  dễ cắt nhầm vào nội dung thật hơn là giúp ích.
 
 Dùng module (import từ app.py):
-    process_outro_swap(paths, own_outro_path, workdir, threshold, detector,
-                        min_scene_len, strip_audio)
+    process_outro_swap(paths, own_outro_path, workdir, strip_audio)
 
 Yêu cầu: ffmpeg, ffprobe trong PATH (giống remix_core.py).
 """
 
+import concurrent.futures
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from remix_core import (
-    _grab_frame_bgr,
-    concat_clips,
-    detect_scenes,
-    ffprobe_info,
-    split_clips,
-)
+from remix_core import _grab_frame_bgr, concat_clips, ffprobe_info, split_clips
 
 # Giây tính từ cuối video dùng để "dò thử" xem 2 video có outro chung không.
 # Outro quan sát được trên thực tế dài ~3-4s, nên mốc 1.5s trước khi kết
@@ -140,19 +140,18 @@ def _find_boundary_by_time(path, ref_hash, threshold, duration):
     return limit  # khớp tới tận giới hạn dò -> cắt tại giới hạn cho an toàn
 
 
-def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, fallback_scenes=None):
+def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD):
     """Xác định mốc thời gian bắt đầu outro đối thủ cho mỗi video, bằng cách
-    so khớp hình ảnh CHÉO giữa các video trong cùng danh sách `paths`.
-
-    `fallback_scenes`: list scene (từ detect_scenes) song song với `paths`,
-    dùng cho phương án dự phòng khi 1 video không khớp được với video nào
-    khác. Nếu không truyền, video không khớp sẽ không bị cắt gì.
+    so khớp hình ảnh CHÉO giữa các video trong cùng danh sách `paths`. Tự
+    gom nhóm theo độ giống nhau — tải lên trộn lẫn nhiều app/đối thủ khác
+    nhau trong 1 lần vẫn tự tách đúng thành từng nhóm riêng, không cần tự
+    sắp xếp trước.
 
     Trả về list dict cùng độ dài `paths`:
       - outro_start: giây bắt đầu outro trong video gốc, None nếu không cắt.
       - reason: "matched" (khớp được với video khác — chắc chắn) |
-                "fallback" (không khớp ai, dùng scene cuối cùng — kém chắc
-                chắn hơn) | "none" (không xác định được, giữ nguyên).
+                "none" (không khớp được video nào khác — GIỮ NGUYÊN, không
+                đoán liều, vì rất có thể video đó không hề có outro).
     """
     n = len(paths)
     durations = [ffprobe_info(p)["duration"] for p in paths]
@@ -175,7 +174,7 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, fallback_sce
         if not placed:
             groups.append({i})
 
-    results = [None] * n
+    results = [{"outro_start": None, "reason": "none"} for _ in range(n)]
     for g in groups:
         if len(g) < 2:
             continue
@@ -185,75 +184,87 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, fallback_sce
             boundary = _find_boundary_by_time(paths[i], ref_hash, threshold, durations[i])
             results[i] = {"outro_start": boundary, "reason": "matched"}
 
-    for i in range(n):
-        if results[i] is not None:
-            continue
-        scenes = fallback_scenes[i] if fallback_scenes else None
-        if scenes and len(scenes) >= 2:
-            results[i] = {"outro_start": scenes[-1][0], "reason": "fallback"}
-        else:
-            results[i] = {"outro_start": None, "reason": "none"}
-
     return results
 
 
-def process_outro_swap(paths, own_outro_path, workdir, threshold, detector, min_scene_len,
-                        strip_audio, tail_match_threshold=DEFAULT_MATCH_THRESHOLD, on_source=None):
+def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, workdir, strip_audio):
+    """Xử lý 1 video: cắt outro (nếu xác định được) + gắn outro của mình.
+    Tách riêng thành hàm để chạy song song nhiều video cùng lúc (xem
+    process_outro_swap) — mỗi video dùng tên file riêng biệt (theo `i`) nên
+    chạy đồng thời không đụng nhau."""
+    info = ffprobe_info(p)
+    # Không cần đồng nhất kích thước với các video khác (không ghép chéo
+    # nội dung giữa các video như remix_core.py) — nhưng PHẢI chọn khung
+    # hình chuẩn theo bên nào có ĐỘ PHÂN GIẢI CAO HƠN giữa video nguồn và
+    # outro của bạn. Nếu luôn lấy theo video nguồn (thường thấp hơn, vì là
+    # file tải về từ đối thủ) thì outro chất lượng cao của bạn sẽ bị co nhỏ
+    # xuống theo, gây mờ — đã gặp lỗi này trên thực tế.
+    target_spec = _pick_larger_spec(info, own_info)
+    want_audio = (not strip_audio) and (info["has_audio"] or own_info["has_audio"])
+
+    content_end = boundary["outro_start"] if boundary["outro_start"] is not None else info["duration"]
+    content_clips = split_clips(
+        p, [(0.0, content_end)], clips_dir, info["has_audio"], want_audio, 0.0,
+        target_spec, name_prefix=f"content{i:02d}",
+    )
+    outro_clips = split_clips(
+        own_outro_path, [(0.0, own_info["duration"])], clips_dir, own_info["has_audio"],
+        want_audio, 0.0, target_spec, name_prefix=f"ownoutro{i:02d}",
+    )
+
+    out_path = workdir / f"outro_swap_{i + 1:02d}.mp4"
+    concat_clips(content_clips + outro_clips, out_path, workdir)
+
+    cut_seconds = (info["duration"] - content_end) if boundary["outro_start"] is not None else 0.0
+    for c in content_clips + outro_clips:
+        c.unlink(missing_ok=True)
+
+    return {"path": out_path, "outro_cut_seconds": cut_seconds, "reason": boundary["reason"]}
+
+
+def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
+                        tail_match_threshold=DEFAULT_MATCH_THRESHOLD, on_source=None,
+                        max_workers=4):
     """Với mỗi video trong `paths`: cắt outro đối thủ (nếu xác định được),
     gắn `own_outro_path` vào cuối — GIỮ NGUYÊN nội dung gốc, không xáo trộn,
     không ghép với video khác. Mỗi video đầu vào cho ra đúng 1 video kết quả.
 
-    on_source(i, total, name, boundary_info) được gọi sau mỗi video xử lý
-    xong, để UI báo tiến độ + cảnh báo.
+    Xử lý SONG SONG tối đa `max_workers` video cùng lúc (mặc định 4) — quan
+    trọng khi tải lên số lượng lớn video (vd hàng chục/hàng trăm), việc cắt
+    + ghép từng video (chạy ffmpeg) độc lập với nhau nên tận dụng được nhiều
+    lõi CPU cùng lúc thay vì làm tuần tự từng cái. Máy chỉ có 1 lõi CPU vẫn
+    chạy đúng, chỉ là không nhanh hơn.
 
-    Trả về list dict: {"path": Path video kết quả, "outro_cut_seconds": số
-    giây outro đối thủ đã cắt (0 nếu không cắt được gì), "reason": xem
-    find_outro_boundaries()}.
+    on_source(done_count, total, name, result) được gọi mỗi khi 1 video xử
+    lý xong (theo thứ tự HOÀN THÀNH, không nhất thiết theo thứ tự tải lên,
+    vì chạy song song) — để UI báo tiến độ + cảnh báo.
+
+    Trả về list dict (đúng thứ tự `paths`): {"path": Path video kết quả,
+    "outro_cut_seconds": số giây outro đối thủ đã cắt (0 nếu không cắt được
+    gì), "reason": xem find_outro_boundaries()}.
     """
     workdir = Path(workdir)
     clips_dir = workdir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
 
-    # Scene chỉ cần cho phương án dự phòng (khi không khớp được video nào
-    # khác) — không dùng để định vị outro trong đường đi chính nữa.
-    fallback_scenes = [detect_scenes(p, threshold, detector, min_scene_len) for p in paths]
-    boundaries = find_outro_boundaries(paths, tail_match_threshold, fallback_scenes)
-
+    boundaries = find_outro_boundaries(paths, tail_match_threshold)
     own_info = ffprobe_info(own_outro_path)
 
-    made = []
-    for i, (p, b) in enumerate(zip(paths, boundaries)):
-        info = ffprobe_info(p)
-        # Không cần đồng nhất kích thước với các video khác (không ghép
-        # chéo nội dung giữa các video như remix_core.py) — nhưng PHẢI chọn
-        # khung hình chuẩn theo bên nào có ĐỘ PHÂN GIẢI CAO HƠN giữa video
-        # nguồn và outro của bạn. Nếu luôn lấy theo video nguồn (thường thấp
-        # hơn, vì là file tải về từ đối thủ) thì outro chất lượng cao của
-        # bạn sẽ bị co nhỏ xuống theo, gây mờ — đã gặp lỗi này trên thực tế.
-        target_spec = _pick_larger_spec(info, own_info)
-        want_audio = (not strip_audio) and (info["has_audio"] or own_info["has_audio"])
-
-        content_end = b["outro_start"] if b["outro_start"] is not None else info["duration"]
-        content_clips = split_clips(
-            p, [(0.0, content_end)], clips_dir, info["has_audio"], want_audio, 0.0,
-            target_spec, name_prefix=f"content{i:02d}",
-        )
-        outro_clips = split_clips(
-            own_outro_path, [(0.0, own_info["duration"])], clips_dir, own_info["has_audio"],
-            want_audio, 0.0, target_spec, name_prefix=f"ownoutro{i:02d}",
-        )
-
-        out_path = workdir / f"outro_swap_{i + 1:02d}.mp4"
-        concat_clips(content_clips + outro_clips, out_path, workdir)
-
-        cut_seconds = (info["duration"] - content_end) if b["outro_start"] is not None else 0.0
-        result = {"path": out_path, "outro_cut_seconds": cut_seconds, "reason": b["reason"]}
-        made.append(result)
-
-        for c in content_clips + outro_clips:
-            c.unlink(missing_ok=True)
-
-        if on_source:
-            on_source(i, len(paths), p.name, result)
+    made = [None] * len(paths)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _process_one_video, i, p, b, own_outro_path, own_info, clips_dir, workdir, strip_audio,
+            ): i
+            for i, (p, b) in enumerate(zip(paths, boundaries))
+        }
+        done_count = 0
+        for future in concurrent.futures.as_completed(futures):
+            i = futures[future]
+            result = future.result()
+            made[i] = result
+            done_count += 1
+            if on_source:
+                on_source(done_count, len(paths), paths[i].name, result)
 
     return made

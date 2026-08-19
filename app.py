@@ -106,7 +106,26 @@ st.markdown(
 
 OUTRO_DIR = Path(__file__).parent / "outros"
 OUTRO_DIR.mkdir(exist_ok=True)
-OUTRO_PRESETS = {"Photo app": OUTRO_DIR / "photo.mp4", "Language app": OUTRO_DIR / "language.mp4"}
+# Mỗi loại giờ là 1 THƯ MỤC chứa được nhiều outro (thay vì đúng 1 file cố
+# định như trước) — người dùng chọn 1 trong số đó mỗi lần chạy.
+OUTRO_CATEGORY_SLUGS = {"Photo app": "photo", "Language app": "language"}
+
+
+def _outro_dir_for(category):
+    d = OUTRO_DIR / OUTRO_CATEGORY_SLUGS[category]
+    d.mkdir(parents=True, exist_ok=True)
+    # Di cư dữ liệu cũ (1 file cố định outros/photo.mp4) sang cấu trúc thư
+    # mục mới nếu có, để không mất outro đã upload từ trước.
+    legacy_file = OUTRO_DIR / f"{OUTRO_CATEGORY_SLUGS[category]}.mp4"
+    if legacy_file.exists() and not any(d.iterdir()):
+        legacy_file.rename(d / legacy_file.name)
+    return d
+
+
+def _list_outros(category):
+    d = _outro_dir_for(category)
+    files = [f for ext in ("*.mp4", "*.mov", "*.mkv") for f in d.glob(ext)]
+    return sorted(files, key=lambda p: p.name.lower())
 
 # Mật khẩu chung chặn người lạ — đặt trong .streamlit/secrets.toml (máy này)
 # hoặc mục "Secrets" của Streamlit Cloud (lúc deploy), KHÔNG viết thẳng vào
@@ -512,65 +531,96 @@ def render_outro_swap():
         if key not in st.session_state:
             st.session_state[key] = default
 
-    with st.expander("⚙️ Quản lý outro của tôi (upload 1 lần, dùng lại nhiều lần)"):
-        for label, path in OUTRO_PRESETS.items():
-            cols = st.columns([3, 2])
-            if path.exists():
-                dur = core.ffprobe_info(path)["duration"]
-                cols[0].success(f"**{label}**: đã có sẵn ({dur:.1f}s)")
+    with st.expander("⚙️ Quản lý outro của tôi (lưu nhiều outro mỗi loại, dùng lại nhiều lần)"):
+        for category in OUTRO_CATEGORY_SLUGS:
+            st.markdown(f"**{category}**")
+            outro_dir = _outro_dir_for(category)
+            existing = _list_outros(category)
+
+            if existing:
+                cols = st.columns(4)
+                for idx, f in enumerate(existing):
+                    with cols[idx % 4]:
+                        frame = core._grab_frame_bgr(f, 0.3)
+                        if frame is not None:
+                            st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+                        dur = core.ffprobe_info(f)["duration"]
+                        st.caption(f"{f.stem} ({dur:.1f}s)")
+                        if st.button("🗑️ Xoá", key=f"del_outro_{category}_{f.name}", use_container_width=True):
+                            f.unlink(missing_ok=True)
+                            st.rerun()
             else:
-                cols[0].warning(f"**{label}**: chưa có — hãy upload")
-            new_file = cols[1].file_uploader(
-                f"Thay outro {label}", type=["mp4", "mov", "mkv"],
-                key=f"outro_upload_{label}", label_visibility="collapsed",
+                st.caption("Chưa có outro nào cho loại này — thêm ở ô bên dưới.")
+
+            new_files = st.file_uploader(
+                f"Thêm outro mới cho {category} (chọn được nhiều file cùng lúc)",
+                type=["mp4", "mov", "mkv"], accept_multiple_files=True,
+                key=f"outro_upload_multi_{category}",
             )
-            if new_file is not None:
+            if new_files:
                 # File tải lên vẫn còn "dính" trong ô upload ở MỌI lần trang
-                # tự load lại sau đó (chọn dropdown, tải video khác...), nên
-                # phải nhớ đã lưu file NÀY rồi — nếu không, code sẽ tưởng là
-                # file mới, ghi lại + rerun() liên tục mỗi lần trang tải lại,
-                # khiến trang cứ tự nhảy/reset không dừng.
-                sig = (new_file.name, new_file.size)
-                if st.session_state.get(f"outro_saved_sig_{label}") != sig:
-                    path.write_bytes(new_file.getvalue())
-                    st.session_state[f"outro_saved_sig_{label}"] = sig
-                    st.success(f"Đã lưu outro {label} mới.")
+                # tự load lại sau đó, nên phải nhớ đã lưu batch NÀY rồi — nếu
+                # không, code sẽ tưởng là file mới, ghi lại + rerun() liên
+                # tục mỗi lần trang tải lại, khiến trang cứ tự nhảy không dừng.
+                sig = tuple((f.name, f.size) for f in new_files)
+                if st.session_state.get(f"outro_saved_sig_{category}") != sig:
+                    for f in new_files:
+                        (outro_dir / f.name).write_bytes(f.getvalue())
+                    st.session_state[f"outro_saved_sig_{category}"] = sig
+                    st.success(f"Đã thêm {len(new_files)} outro vào '{category}'.")
                     st.rerun()
+            st.divider()
 
     uploaded_files = st.file_uploader(
-        "Kéo-thả video của đối thủ vào đây (nên tải nhiều video CÙNG 1 app/chiến "
-        "dịch cùng lúc — tool cần ≥2 video có outro giống nhau để nhận diện chính xác)",
+        "Kéo-thả video của đối thủ vào đây — có thể tải rất nhiều video cùng lúc, "
+        "kể cả TRỘN LẪN nhiều app/đối thủ khác nhau, tool tự tách đúng theo từng "
+        "nhóm (mỗi nhóm cần ≥2 video cùng outro mới nhận diện chính xác được)",
         type=["mp4", "mov", "mkv", "avi", "webm"],
         accept_multiple_files=True,
         key="outro_uploader",
     )
     has_files = bool(uploaded_files)
 
-    outro_choice = st.selectbox("Outro của tôi (gắn vào cuối mọi video kết quả)",
-                                 list(OUTRO_PRESETS.keys()))
-    chosen_outro_path = OUTRO_PRESETS[outro_choice]
-    outro_ready = chosen_outro_path.exists()
-    if not outro_ready:
-        st.warning(f"Chưa có file outro cho '{outro_choice}' — mở mục 'Quản lý outro của tôi' ở trên để upload trước.")
+    outro_category = st.selectbox("Loại outro của tôi", list(OUTRO_CATEGORY_SLUGS.keys()),
+                                   key="outro_category_choice")
+    available_outros = _list_outros(outro_category)
+
+    chosen_outro_path = None
+    if not available_outros:
+        st.warning(f"Chưa có outro nào cho '{outro_category}' — mở mục 'Quản lý outro của tôi' ở trên để thêm.")
+    else:
+        st.write(f"Tích chọn ĐÚNG 1 outro muốn dùng cho '{outro_category}':")
+        cols = st.columns(4)
+        picked = []
+        for idx, f in enumerate(available_outros):
+            with cols[idx % 4]:
+                frame = core._grab_frame_bgr(f, 0.3)
+                if frame is not None:
+                    st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+                dur = core.ffprobe_info(f)["duration"]
+                if st.checkbox(f"{f.stem} ({dur:.1f}s)", key=f"outro_tick_{outro_category}_{f.name}"):
+                    picked.append(f)
+
+        if len(picked) == 0:
+            st.warning("Chưa tích chọn outro nào.")
+        elif len(picked) > 1:
+            st.error(f"Chỉ được chọn ĐÚNG 1 outro — đang tích {len(picked)} cái, bỏ tích bớt để tiếp tục.")
+        else:
+            chosen_outro_path = picked[0]
+
+    outro_ready = chosen_outro_path is not None
 
     with st.expander("Tuỳ chọn nâng cao (không cần đụng vào nếu không rõ)"):
-        detector = st.selectbox(
-            "Cách nhận diện đoạn cắt (chỉ dùng cho phương án dự phòng)",
-            ["content", "adaptive"], key="outro_detector",
-            help="Dùng khi 1 video không khớp được outro với video nào khác.",
-        )
-        threshold = st.number_input(
-            "Độ nhạy cắt cảnh cho phương án dự phòng", min_value=1.0, max_value=100.0,
-            value=27.0, step=1.0, key="outro_scene_threshold",
-        )
-        min_scene_len = st.number_input(
-            "Độ dài scene tối thiểu cho phương án dự phòng (giây)",
-            min_value=0.0, value=0.5, step=0.1, key="outro_min_scene_len",
-        )
         match_threshold = st.number_input(
             "Ngưỡng nhận outro chung giữa các video (thấp = khắt khe hơn, ít nhận "
             "nhầm nhưng dễ bỏ sót)",
             min_value=1, max_value=100, value=outro_core.DEFAULT_MATCH_THRESHOLD, step=1,
+        )
+        max_workers = st.number_input(
+            "Số video xử lý song song cùng lúc (tăng lên nếu máy chủ nhiều lõi CPU "
+            "để xử lý nhanh hơn khi tải lên nhiều video; giảm xuống nếu bị treo/lỗi "
+            "do quá tải)",
+            min_value=1, max_value=16, value=4, step=1, key="outro_max_workers",
         )
         strip_audio = st.checkbox("Bỏ âm thanh trong video kết quả", key="outro_strip_audio")
 
@@ -592,31 +642,29 @@ def render_outro_swap():
             with st.status("Đang xử lý video...", expanded=True) as status:
                 made = []
 
-                def on_source(i, total, name, result):
+                def on_source(done, total, name, result):
                     if result["reason"] == "matched":
                         status.write(
-                            f"[{i + 1}/{total}] ✓ {name}: nhận diện chắc chắn — "
-                            f"đã cắt {result['outro_cut_seconds']:.1f}s outro đối thủ."
-                        )
-                    elif result["reason"] == "fallback":
-                        status.write(
-                            f"[{i + 1}/{total}] ⚠️ {name}: không tìm được outro chung "
-                            f"với video khác — đã dùng phương án dự phòng (cắt cảnh "
-                            f"cuối cùng, {result['outro_cut_seconds']:.1f}s), có thể "
-                            "không chính xác hoàn toàn."
+                            f"[{done}/{total}] ✓ {name}: nhận diện chắc chắn — đã cắt "
+                            f"{result['outro_cut_seconds']:.1f}s outro đối thủ, gắn "
+                            "outro của bạn vào cuối."
                         )
                     else:
                         status.write(
-                            f"[{i + 1}/{total}] ⚠️ {name}: không xác định được outro "
-                            "— GIỮ NGUYÊN toàn bộ video gốc (video có thể có 2 outro "
-                            "nối tiếp nhau nếu bản gốc vốn đã có outro riêng)."
+                            f"[{done}/{total}] ⚠️ {name}: không tìm được video nào "
+                            "khác cùng outro trong mẻ này (có thể do nó không có "
+                            "outro, hoặc là app duy nhất/lẻ trong mẻ tải lên) — "
+                            "KHÔNG dám cắt liều để tránh mất nội dung thật, nhưng "
+                            "**outro của bạn vẫn được gắn vào cuối** — video này có "
+                            "thể có 2 outro nối tiếp nhau (outro cũ của đối thủ nếu "
+                            "có, rồi tới outro của bạn), nên xem lại riêng video này."
                         )
                     made.append(result)
 
                 outro_core.process_outro_swap(
-                    input_paths, chosen_outro_path, workdir,
-                    threshold, detector, min_scene_len, strip_audio,
+                    input_paths, chosen_outro_path, workdir, strip_audio,
                     tail_match_threshold=match_threshold, on_source=on_source,
+                    max_workers=int(max_workers),
                 )
 
                 new_paths = apply_output_naming([r["path"] for r in made], output_name)
