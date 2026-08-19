@@ -24,6 +24,7 @@ import uuid
 from pathlib import Path
 
 import cv2
+import numpy as np
 import streamlit as st
 from PIL import Image
 from streamlit_cropper import st_cropper
@@ -140,16 +141,34 @@ def _enforce_single_outro_tick(category, just_ticked_name, all_names):
 
 
 @st.cache_data(show_spinner=False)
-def _outro_preview(path_str, mtime):
-    """Ảnh thumbnail (RGB) + thời lượng của 1 outro — cache theo (đường dẫn,
-    thời điểm sửa file) để KHÔNG phải đọc lại video/gọi ffprobe mỗi khi
-    trang tự load lại (vd tích ô khác, đổi loại outro...), tránh giật/lag
-    khi thao tác. File đổi nội dung (mtime đổi) sẽ tự tính lại đúng."""
+def _outro_preview(path_str, mtime, max_width=220):
+    """Ảnh thumbnail (RGB, đã thu nhỏ) + thời lượng của 1 outro — cache theo
+    (đường dẫn, thời điểm sửa file) để KHÔNG phải đọc lại video/gọi ffprobe
+    mỗi khi trang tự load lại (vd tích ô khác, đổi loại outro...). Thu nhỏ
+    ảnh xuống `max_width` px vì đây chỉ là ảnh xem trước nhỏ — ảnh gốc có
+    thể full-HD, nặng và chậm khi Streamlit phải truyền lại mỗi lần trang
+    load lại (dù không tính lại từ video nhờ cache, riêng việc gửi ảnh lớn
+    qua lại vẫn gây trễ)."""
     path = Path(path_str)
     frame = core._grab_frame_bgr(path, 0.3)
-    thumb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if frame is not None else None
+    thumb = None
+    if frame is not None:
+        h, w = frame.shape[:2]
+        if w > max_width:
+            frame = cv2.resize(frame, (max_width, int(h * max_width / w)), interpolation=cv2.INTER_AREA)
+        thumb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     duration = core.ffprobe_info(path)["duration"]
     return thumb, duration
+
+
+def _fade_thumb(thumb, amount=0.7):
+    """Làm ảnh nhạt dần về màu trắng (amount=0 giữ nguyên, 1 = trắng hoàn
+    toàn) — dùng để làm mờ các outro KHÔNG được chọn, làm nổi bật cái đang
+    chọn."""
+    if thumb is None:
+        return None
+    faded = thumb.astype(np.float32) * (1 - amount) + 255 * amount
+    return faded.astype(np.uint8)
 
 # Mật khẩu chung chặn người lạ — đặt trong .streamlit/secrets.toml (máy này)
 # hoặc mục "Secrets" của Streamlit Cloud (lúc deploy), KHÔNG viết thẳng vào
@@ -614,11 +633,16 @@ def render_outro_swap():
     else:
         st.write(f"Tích chọn outro muốn dùng cho '{outro_category}' (tích cái khác sẽ tự bỏ tích cái cũ):")
         all_names = [f.name for f in available_outros]
+        selected_name = next(
+            (n for n in all_names if st.session_state.get(f"outro_tick_{outro_category}_{n}")), None,
+        )
         cols = st.columns(4)
         picked = []
         for idx, f in enumerate(available_outros):
             with cols[idx % 4]:
                 thumb, dur = _outro_preview(str(f), f.stat().st_mtime)
+                if selected_name is not None and f.name != selected_name:
+                    thumb = _fade_thumb(thumb)  # KHONG duoc chon -> lam mo trang di, noi bat cai dang chon
                 if thumb is not None:
                     st.image(thumb, use_container_width=True)
                 if st.checkbox(
