@@ -21,7 +21,39 @@ import streamlit as st
 import remix_core as core
 import outro_core
 
-st.set_page_config(page_title="Video Tools", page_icon="🎬", layout="centered")
+st.set_page_config(page_title="Video Tools", page_icon="🎬", layout="wide")
+
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 2.5rem; padding-bottom: 3rem; max-width: 1200px; }
+    h1, h2, h3 { letter-spacing: -0.02em; }
+    div.stButton > button, div.stDownloadButton > button {
+        border-radius: 8px; border: 1px solid #111111; font-weight: 600;
+    }
+    div.stButton > button[kind="primary"], div.stDownloadButton > button {
+        background-color: #111111; color: #FFFFFF;
+    }
+    div.stButton > button[kind="primary"]:hover, div.stDownloadButton > button:hover {
+        background-color: #333333; border-color: #333333; color: #FFFFFF;
+    }
+    div.stButton > button[kind="secondary"] {
+        background-color: #FFFFFF; color: #111111;
+    }
+    [data-testid="stFileUploaderDropzone"] {
+        border-radius: 10px; border: 1.5px dashed #cccccc;
+    }
+    [data-testid="stExpander"] {
+        border: 1px solid #e5e5e5; border-radius: 10px;
+    }
+    [data-testid="stTabs"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 1.02rem; font-weight: 600;
+    }
+    hr { margin: 1.6rem 0; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 OUTRO_DIR = Path(__file__).parent / "outros"
 OUTRO_DIR.mkdir(exist_ok=True)
@@ -84,6 +116,26 @@ def save_uploads(uploaded_files, prefix="video_remixer_"):
         p.write_bytes(f.getvalue())
         paths.append(p)
     return workdir, paths
+
+
+def render_results_grid(paths, download_key_prefix, cols_per_row=3):
+    """Hiển thị các video kết quả dạng lưới (thay vì xếp chồng dọc) — tận
+    dụng bố cục rộng, dễ xem/tải nhiều video cùng lúc hơn."""
+    existing = [p for p in paths if p.exists()]
+    if not existing:
+        return
+    cols = st.columns(cols_per_row)
+    for i, out_path in enumerate(existing):
+        with cols[i % cols_per_row]:
+            st.video(str(out_path))
+            st.download_button(
+                f"⬇️ {out_path.name}",
+                data=out_path.read_bytes(),
+                file_name=out_path.name,
+                mime="video/mp4",
+                key=f"{download_key_prefix}_{out_path.name}_{i}",
+                use_container_width=True,
+            )
 
 
 def render_video_remixer():
@@ -361,17 +413,7 @@ def render_video_remixer():
 
     if st.session_state.outputs:
         st.subheader("Kết quả")
-        for out_path in st.session_state.outputs:
-            if not out_path.exists():
-                continue
-            st.video(str(out_path))
-            st.download_button(
-                f"Tải {out_path.name}",
-                data=out_path.read_bytes(),
-                file_name=out_path.name,
-                mime="video/mp4",
-                key=f"dl_{out_path.name}",
-            )
+        render_results_grid(st.session_state.outputs, "dl")
 
 
 def render_outro_swap():
@@ -493,18 +535,7 @@ def render_outro_swap():
 
     if st.session_state.outro_outputs:
         st.subheader("Kết quả")
-        for result in st.session_state.outro_outputs:
-            out_path = result["path"]
-            if not out_path.exists():
-                continue
-            st.video(str(out_path))
-            st.download_button(
-                f"Tải {out_path.name}",
-                data=out_path.read_bytes(),
-                file_name=out_path.name,
-                mime="video/mp4",
-                key=f"outro_dl_{out_path.name}",
-            )
+        render_results_grid([r["path"] for r in st.session_state.outro_outputs], "outro_dl")
 
 
 check_ffmpeg()
