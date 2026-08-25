@@ -16,6 +16,7 @@
   diện app.
 """
 
+import base64
 import io
 import random
 import re
@@ -812,7 +813,18 @@ def render_outro_swap():
                             opacity=trademark_opacity / 100, size_percent=trademark_size,
                             speed_px_per_sec=trademark_speed,
                         )
-                        st.image(preview_bytes, use_container_width=True)
+                        # Dùng thẻ <img> nhúng trực tiếp (base64) thay vì
+                        # st.image() — st.image() có thể chỉ hiện khung hình
+                        # ĐẦU TIÊN của ảnh động (không chạy hoạt ảnh), trong
+                        # khi nhúng qua HTML thì trình duyệt luôn tự chạy
+                        # hoạt ảnh WEBP/GIF bình thường (giống cách hiện GIF
+                        # ở màn hình "sắp ra mắt" đã dùng và chạy tốt).
+                        preview_b64 = base64.b64encode(preview_bytes).decode()
+                        st.markdown(
+                            f'<img src="data:image/webp;base64,{preview_b64}" '
+                            'style="width:100%; border-radius:8px;">',
+                            unsafe_allow_html=True,
+                        )
 
     output_name = st.text_input(
         "Đặt tên file xuất ra (tuỳ chọn)",
