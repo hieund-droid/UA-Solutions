@@ -124,10 +124,15 @@ st.markdown(
     nhỏ, giống mẫu tham khảo) và nút "Log out" — tất cả theo tông tối. */
     .sidebar-title { color: #e8eaed; font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
     .sidebar-subtitle { color: #6b7280; font-size: 0.78rem; white-space: nowrap; margin-bottom: 0.5rem; }
+    /* Canh giữa nút thu gọn/mở rộng bằng flex trên chính khung chứa nó —
+    KHÔNG dùng st.columns nữa (cột hẹp dần khi thu gọn từng cắt mất nửa
+    nút), nên nút giờ luôn hiện tròn trịa, không bị hụt dù sidebar rộng hay
+    hẹp. */
+    .st-key-sidebar_toggle { display: flex; justify-content: center; margin: 6px 0 12px 0; }
     .st-key-sidebar_toggle button {
         border-radius: 50% !important; border: 1px solid #2a2d35 !important;
         background: #1e2129 !important; width: 30px !important; height: 30px !important;
-        padding: 0 !important; min-height: 30px !important;
+        padding: 0 !important; min-height: 30px !important; flex-shrink: 0;
     }
     .st-key-sidebar_toggle button span { color: #9aa0a6 !important; }
     .st-key-logout_btn button {
@@ -527,7 +532,7 @@ def render_results_grid(paths, download_key_prefix, cols_per_row=4):
 def render_video_remixer():
     """Tab 'Video Remixer' — HÀNH VI GIỮ NGUYÊN 100% so với trước, chỉ tách
     ra thành hàm riêng để dùng chung giao diện với tab 'Cắt & Gắn Outro'."""
-    st.title("🎬 Video Remixer")
+    st.title(":material/shuffle: Video Remixer")
     st.caption("Tách cảnh, trộn ngẫu nhiên, ghép thành video mới.")
 
     for key, default in [
@@ -773,7 +778,7 @@ def render_outro_swap():
     Remixer: cắt outro của ĐỐI THỦ ở cuối mỗi video, gắn outro của MÌNH vào
     thay thế, GIỮ NGUYÊN nội dung gốc — không xáo trộn/ghép video với nhau.
     Mỗi video đầu vào cho ra đúng 1 video kết quả tương ứng."""
-    st.title("✂️ Cắt & Gắn Outro")
+    st.title(":material/content_cut: Outro Solution")
     st.caption("Cắt outro đối thủ ở cuối video, gắn outro của bạn vào thay thế.")
 
     for key, default in [("outro_outputs", []), ("outro_run_error", None), ("outro_uploader_version", 0)]:
@@ -1116,7 +1121,7 @@ def render_logo_cover():
     ra mắt". Có ô nhỏ cuối trang để người test nội bộ (biết mật khẩu riêng
     DEV_UNLOCK_PASSWORD) mở khoá thử nghiệm mà không cần tắt khoá chung."""
     if LOGO_COVER_LOCKED and not st.session_state.get("logo_cover_unlocked"):
-        st.title("🚫 Che Logo Đối Thủ")
+        st.title(":material/shield: Logo Cover")
         st.markdown("### 🚧 Skill upcoming...")
         st.image(COMING_SOON_GIF, use_container_width=True)
         st.caption("Đang hoàn thiện thêm — quay lại sau nhé ☕")
@@ -1132,7 +1137,7 @@ def render_logo_cover():
                     st.error("Sai mật khẩu test.")
         return
 
-    st.title("🚫 Che Logo Đối Thủ")
+    st.title(":material/shield: Logo Cover")
 
     if logo_cover_core is None:
         st.error(
@@ -1312,14 +1317,17 @@ def _sidebar_state_css(collapsed, active_key):
 with st.sidebar:
     st.markdown(_sidebar_state_css(st.session_state.sidebar_collapsed, st.session_state.nav_page), unsafe_allow_html=True)
 
-    top_left, top_right = st.columns([5, 1])
-    with top_left:
-        st.markdown('<div class="sidebar-title">UA Solutions</div>', unsafe_allow_html=True)
-        st.markdown('<div class="sidebar-subtitle">Apero internal tools</div>', unsafe_allow_html=True)
-    with top_right:
-        if st.button("", icon=":material/chevron_right:", key="sidebar_toggle"):
-            st.session_state.sidebar_collapsed = not st.session_state.sidebar_collapsed
-            st.rerun()
+    st.markdown('<div class="sidebar-title">UA Solutions</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-subtitle">Apero internal tools</div>', unsafe_allow_html=True)
+    # Mũi tên đổi hướng theo trạng thái: đang MỞ RỘNG -> chỉ vào trong (ám
+    # chỉ bấm để thu gọn); đang THU GỌN -> chỉ ra ngoài (ám chỉ bấm để mở
+    # rộng). Không đặt trong st.columns nữa — cột hẹp dần khi thu gọn từng
+    # cắt mất nửa nút (đã gặp thật), giờ để full-width + tự canh giữa bằng
+    # CSS (xem .st-key-sidebar_toggle) nên luôn hiện trọn vẹn dù rộng hay hẹp.
+    toggle_icon = "chevron_left" if not st.session_state.sidebar_collapsed else "chevron_right"
+    if st.button("", icon=f":material/{toggle_icon}:", key="sidebar_toggle"):
+        st.session_state.sidebar_collapsed = not st.session_state.sidebar_collapsed
+        st.rerun()
 
     for item in NAV_ITEMS:
         if st.button(
