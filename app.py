@@ -243,82 +243,77 @@ header[data-testid="stHeader"] { display: none; }
 [data-testid="InputInstructions"] { display: none !important; }
 
 .login-title {
-    position: fixed; top: calc(50vh - 300px); left: 50%; transform: translateX(-50%);
+    position: fixed; top: calc(50vh - 320px); left: 50%; transform: translateX(-50%);
     font-family: 'Titan One', cursive;
     color: #d9f2c4; font-size: 52px; letter-spacing: 0.03em;
     text-shadow: 3px 3px 0 #1f4a20, -1px -1px 0 #1f4a20, 1px -1px 0 #1f4a20, -1px 1px 0 #1f4a20;
     z-index: 6; text-align: center; width: 100%;
 }
 .croc-stage {
-    position: fixed; top: calc(50% + 40px); left: 50%; transform: translate(-50%, -50%) rotate(-20deg);
-    width: 620px; height: 520px; z-index: 1; pointer-events: none;
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 520px; height: 520px; z-index: 1; pointer-events: none;
 }
-.croc-upper-jaw {
-    position: absolute; top: 40px; left: 0; width: 600px; height: 230px;
-    background: linear-gradient(160deg, #5aa64a 0%, #3d8438 60%, #2d6b2c 100%);
-    clip-path: polygon(
-      2% 60%, 3% 45%, 6% 30%, 11% 18%, 18% 10%, 27% 5%, 38% 2%,
-      52% 0%, 66% 1%, 78% 4%, 88% 10%, 95% 20%, 99% 33%, 100% 48%,
-      100% 68%,
-      92% 74%, 82% 79%, 70% 83%, 57% 85%, 44% 85%, 32% 82%,
-      21% 76%, 12% 68%, 6% 60%, 2% 60%
-    );
+.croc-head-top {
+    position: absolute; top: 20px; left: 10px; width: 500px; height: 150px;
+    background: linear-gradient(180deg, #5aa64a 0%, #3f8a3a 100%);
+    border-radius: 250px 250px 20px 20px / 140px 140px 10px 10px;
+    box-shadow: inset 0 -8px 18px rgba(0,0,0,0.15);
 }
+.croc-spot { position: absolute; background: #2f6b30; border-radius: 50%; opacity: 0.5; }
 .croc-eye {
-    position: absolute; width: 56px; height: 56px;
-    background: #eede9a; border-radius: 50%; border: 5px solid #2d6b2c;
+    position: absolute; top: 18px; width: 50px; height: 50px;
+    background: #eede9a; border-radius: 50%; border: 4px solid #3f8a3a;
     display: flex; align-items: center; justify-content: center;
 }
-.croc-eye.e1 { top: 74px; left: 380px; }
-.croc-eye.e2 { top: 60px; left: 470px; }
-.croc-pupil { width: 20px; height: 20px; background: #1a1a1a; border-radius: 50%; }
+.croc-eye.left { left: 90px; }
+.croc-eye.right { right: 90px; }
+.croc-pupil { width: 18px; height: 18px; background: #1a1a1a; border-radius: 50%; }
 .croc-nostril {
-    position: absolute; width: 15px; height: 20px; border-radius: 50%;
-    background: #1f4a20; transform: rotate(-15deg);
+    position: absolute; top: 6px; width: 14px; height: 18px;
+    background: #1f4a20; border-radius: 50%;
 }
-.croc-nostril.n1 { top: 102px; left: 22px; }
-.croc-nostril.n2 { top: 118px; left: 44px; }
-.croc-tooth-up {
-    position: absolute; width: 0; height: 0;
-    border-left: 13px solid transparent; border-right: 13px solid transparent;
-    border-top: 26px solid #f5f0e0;
+.croc-nostril.left { left: 235px; }
+.croc-nostril.right { right: 235px; }
+
+.croc-jaw-top {
+    position: absolute; top: 170px; left: 10px; width: 500px; height: 40px;
+    background: #4a9640; border-radius: 30px 30px 0 0;
+}
+.croc-teeth-top {
+    position: absolute; top: 196px; left: 10px; width: 500px; height: 30px;
+    background: #f5f0e0;
+    clip-path: polygon(
+      2% 0%, 10% 0%, 14% 100%, 18% 0%, 26% 0%, 30% 100%, 34% 0%,
+      42% 0%, 46% 100%, 50% 0%, 58% 0%, 62% 100%, 66% 0%,
+      74% 0%, 78% 100%, 82% 0%, 90% 0%, 94% 100%, 98% 0%
+    );
 }
 .croc-mouth-inside {
-    position: absolute; top: 110px; left: 40px; width: 480px; height: 220px;
-    background: radial-gradient(ellipse at 60% 40%, #8a2828 0%, #4a1010 100%);
-    border-radius: 40% 45% 45% 40% / 55% 55% 45% 45%;
-    box-shadow: inset 0 8px 24px rgba(0,0,0,0.5);
+    position: absolute; top: 200px; left: 40px; width: 440px; height: 180px;
+    background: radial-gradient(ellipse at center, #8a2828 0%, #4a1010 100%);
+    border-radius: 24px; box-shadow: inset 0 6px 20px rgba(0,0,0,0.5);
     transition: opacity 0.25s ease 0.3s;
 }
 .croc-stage.closing .croc-mouth-inside { opacity: 0; }
 
 .croc-lower-jaw-group { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; }
 .croc-lower-jaw-group.closing { animation: crocCloseJaw 0.6s cubic-bezier(0.55,0,0.1,1) forwards; }
-.croc-lower-jaw {
-    position: absolute; top: 275px; left: 10px; width: 520px; height: 150px;
-    background: linear-gradient(200deg, #4a9640 0%, #2d6b2c 100%);
+.croc-jaw-bottom {
+    position: absolute; top: 365px; left: 10px; width: 500px; height: 140px;
+    background: linear-gradient(180deg, #3f8a3a 0%, #2d6b2c 100%);
+    border-radius: 0 0 200px 200px / 0 0 110px 110px;
+}
+.croc-teeth-bottom {
+    position: absolute; top: 350px; left: 10px; width: 500px; height: 30px;
+    background: #f5f0e0;
     clip-path: polygon(
-      2% 25%, 4% 12%, 10% 4%, 20% 0%, 34% 0%, 48% 2%,
-      62% 6%, 76% 12%, 88% 20%, 96% 30%, 100% 42%,
-      100% 62%, 96% 78%, 88% 90%, 76% 97%, 60% 100%,
-      42% 99%, 26% 92%, 14% 80%, 6% 62%, 2% 45%, 2% 25%
+      2% 100%, 10% 100%, 14% 0%, 18% 100%, 26% 100%, 30% 0%, 34% 100%,
+      42% 100%, 46% 0%, 50% 100%, 58% 100%, 62% 0%, 66% 100%,
+      74% 100%, 78% 0%, 82% 100%, 90% 100%, 94% 0%, 98% 100%
     );
 }
-.croc-tooth-down {
-    position: absolute; width: 0; height: 0;
-    border-left: 11px solid transparent; border-right: 11px solid transparent;
-    border-bottom: 22px solid #f5f0e0;
-}
-.croc-leg {
-    position: absolute; top: 355px; left: 480px; width: 100px; height: 75px;
-    background: #3d8438; border-radius: 50% 50% 45% 55%;
-}
-.croc-toe {
-    position: absolute; width: 26px; height: 34px; background: #3d8438;
-    border-radius: 50% 50% 60% 60%; border-bottom: 4px solid #2d6b2c;
-}
 
-@keyframes crocCloseJaw { from { transform: translateY(0); } to { transform: translateY(-190px); } }
+@keyframes crocCloseJaw { from { transform: translateY(0); } to { transform: translateY(-158px); } }
 @keyframes crocShake {
     10%, 90% { transform: translateX(-1px); }
     20%, 80% { transform: translateX(2px); }
@@ -329,8 +324,8 @@ header[data-testid="stHeader"] { display: none; }
 /* Định vị lại ô nhập mật khẩu (widget thật của Streamlit) để nằm ĐÚNG vào
 khoang miệng cá sấu vẽ ở trên — xem _croc_stage_html(). */
 .st-key-login_pwd {
-    position: fixed !important; top: calc(50% + 82px) !important; left: 50%;
-    transform: translateX(-50%); width: 250px !important; z-index: 6;
+    position: fixed !important; top: calc(50% + 20px) !important; left: 50%;
+    transform: translateX(-50%); width: 280px !important; z-index: 6;
 }
 .st-key-login_pwd input {
     text-align: center; border-radius: 10px !important; border: 3px solid transparent !important;
@@ -346,35 +341,19 @@ def _croc_stage_html(closing=False):
     return f"""
     <div class="{stage_cls}">
       <div class="croc-mouth-inside"></div>
-
-      <div class="croc-upper-jaw"></div>
-      <div class="croc-nostril n1"></div>
-      <div class="croc-nostril n2"></div>
-      <div class="croc-eye e1"><div class="croc-pupil"></div></div>
-      <div class="croc-eye e2"><div class="croc-pupil"></div></div>
-
-      <div class="croc-tooth-up" style="top:150px; left:40px; transform:scale(0.55) rotate(2deg);"></div>
-      <div class="croc-tooth-up" style="top:145px; left:80px; transform:scale(0.7) rotate(1deg);"></div>
-      <div class="croc-tooth-up" style="top:150px; left:130px; transform:scale(0.85);"></div>
-      <div class="croc-tooth-up" style="top:158px; left:190px; transform:scale(1.0);"></div>
-      <div class="croc-tooth-up" style="top:168px; left:260px; transform:scale(1.05);"></div>
-      <div class="croc-tooth-up" style="top:176px; left:335px; transform:scale(1.05);"></div>
-      <div class="croc-tooth-up" style="top:182px; left:410px; transform:scale(1.0) rotate(-3deg);"></div>
-
+      <div class="croc-jaw-top"></div>
+      <div class="croc-teeth-top"></div>
       <div class="{lower_cls}">
-        <div class="croc-lower-jaw"></div>
-        <div class="croc-tooth-down" style="top:282px; left:50px; transform:scale(0.5) rotate(2deg);"></div>
-        <div class="croc-tooth-down" style="top:290px; left:95px; transform:scale(0.65);"></div>
-        <div class="croc-tooth-down" style="top:302px; left:150px; transform:scale(0.8);"></div>
-        <div class="croc-tooth-down" style="top:312px; left:215px; transform:scale(0.95);"></div>
-        <div class="croc-tooth-down" style="top:320px; left:290px; transform:scale(1.0);"></div>
-        <div class="croc-tooth-down" style="top:324px; left:365px; transform:scale(1.0) rotate(-2deg);"></div>
+        <div class="croc-jaw-bottom"></div>
+        <div class="croc-teeth-bottom"></div>
       </div>
-
-      <div class="croc-leg">
-        <div class="croc-toe" style="bottom:-14px; left:8px; transform:rotate(-8deg);"></div>
-        <div class="croc-toe" style="bottom:-18px; left:34px;"></div>
-        <div class="croc-toe" style="bottom:-14px; left:60px; transform:rotate(8deg);"></div>
+      <div class="croc-head-top">
+        <div class="croc-spot" style="width:30px;height:30px;top:60px;left:100px;"></div>
+        <div class="croc-spot" style="width:24px;height:24px;top:90px;left:390px;"></div>
+        <div class="croc-nostril left"></div>
+        <div class="croc-nostril right"></div>
+        <div class="croc-eye left"><div class="croc-pupil"></div></div>
+        <div class="croc-eye right"><div class="croc-pupil"></div></div>
       </div>
     </div>
     """
@@ -436,7 +415,7 @@ def require_login():
                 unsafe_allow_html=True,
             )
             st.markdown(
-                '<div style="position:fixed; top:calc(50% + 130px); left:50%; '
+                '<div style="position:fixed; top:calc(50% + 75px); left:50%; '
                 'transform:translateX(-50%); color:#ffb4b4; font-size:14px; z-index:6;">'
                 "Sai mật khẩu — cá sấu chưa cho vào 🐊</div>",
                 unsafe_allow_html=True,
