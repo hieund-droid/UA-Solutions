@@ -22,6 +22,7 @@ import random
 import re
 import shutil
 import tempfile
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -228,9 +229,136 @@ def _fade_thumb(thumb, amount=0.7):
 # không phải viết lại gì nhiều — chỉ thay nội dung hàm require_login() này.
 
 
+_LOGIN_CROC_CSS = """
+<style>
+header[data-testid="stHeader"] { display: none; }
+.block-container { padding-top: 0 !important; }
+[data-testid="stAppViewContainer"], [data-testid="stMain"], body { background: #0d1b0f !important; }
+[data-testid="stForm"] { border: none !important; padding: 0 !important; background: transparent !important; }
+
+.login-title {
+    position: fixed; top: calc(50vh - 280px); left: 50%; transform: translateX(-50%);
+    color: #fff; font-weight: 800; font-size: 28px; letter-spacing: -0.02em;
+    z-index: 6; text-align: center; width: 100%;
+}
+.croc-stage {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 520px; height: 520px; z-index: 1; pointer-events: none;
+}
+.croc-head-top {
+    position: absolute; top: 20px; left: 10px; width: 500px; height: 150px;
+    background: linear-gradient(180deg, #5aa64a 0%, #3f8a3a 100%);
+    border-radius: 250px 250px 20px 20px / 140px 140px 10px 10px;
+    box-shadow: inset 0 -8px 18px rgba(0,0,0,0.15);
+}
+.croc-spot { position: absolute; background: #2f6b30; border-radius: 50%; opacity: 0.5; }
+.croc-eye {
+    position: absolute; top: 18px; width: 50px; height: 50px;
+    background: #eede9a; border-radius: 50%; border: 4px solid #3f8a3a;
+    display: flex; align-items: center; justify-content: center;
+}
+.croc-eye.left { left: 90px; }
+.croc-eye.right { right: 90px; }
+.croc-pupil { width: 18px; height: 18px; background: #1a1a1a; border-radius: 50%; }
+.croc-nostril {
+    position: absolute; top: 6px; width: 14px; height: 18px;
+    background: #1f4a20; border-radius: 50%;
+}
+.croc-nostril.left { left: 235px; }
+.croc-nostril.right { right: 235px; }
+
+.croc-jaw-top {
+    position: absolute; top: 170px; left: 10px; width: 500px; height: 40px;
+    background: #4a9640; border-radius: 30px 30px 0 0;
+}
+.croc-teeth-top {
+    position: absolute; top: 196px; left: 10px; width: 500px; height: 30px;
+    background: #f5f0e0;
+    clip-path: polygon(
+      2% 0%, 10% 0%, 14% 100%, 18% 0%, 26% 0%, 30% 100%, 34% 0%,
+      42% 0%, 46% 100%, 50% 0%, 58% 0%, 62% 100%, 66% 0%,
+      74% 0%, 78% 100%, 82% 0%, 90% 0%, 94% 100%, 98% 0%
+    );
+}
+.croc-mouth-inside {
+    position: absolute; top: 200px; left: 40px; width: 440px; height: 180px;
+    background: radial-gradient(ellipse at center, #8a2828 0%, #4a1010 100%);
+    border-radius: 24px; box-shadow: inset 0 6px 20px rgba(0,0,0,0.5);
+}
+.croc-mouth-inside.closing { animation: crocFadeOut 0.3s ease 0.3s forwards; }
+
+.croc-lower-jaw { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; }
+.croc-lower-jaw.closing { animation: crocCloseJaw 0.6s cubic-bezier(0.55,0,0.1,1) forwards; }
+.croc-jaw-bottom {
+    position: absolute; top: 365px; left: 10px; width: 500px; height: 140px;
+    background: linear-gradient(180deg, #3f8a3a 0%, #2d6b2c 100%);
+    border-radius: 0 0 200px 200px / 0 0 110px 110px;
+}
+.croc-teeth-bottom {
+    position: absolute; top: 350px; left: 10px; width: 500px; height: 30px;
+    background: #f5f0e0;
+    clip-path: polygon(
+      2% 100%, 10% 100%, 14% 0%, 18% 100%, 26% 100%, 30% 0%, 34% 100%,
+      42% 100%, 46% 0%, 50% 100%, 58% 100%, 62% 0%, 66% 100%,
+      74% 100%, 78% 0%, 82% 100%, 90% 100%, 94% 0%, 98% 100%
+    );
+}
+
+@keyframes crocCloseJaw { from { transform: translateY(0); } to { transform: translateY(-158px); } }
+@keyframes crocFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes crocShake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-5px); }
+    40%, 60% { transform: translateX(5px); }
+}
+
+/* Định vị lại ô nhập mật khẩu + nút "Vào" (widget thật của Streamlit) để
+nằm ĐÚNG vào khoang miệng cá sấu vẽ ở trên — xem _croc_stage_html(). */
+.st-key-login_pwd {
+    position: fixed !important; top: calc(50vh + 20px) !important; left: 50%;
+    transform: translateX(-50%); width: 280px !important; z-index: 6;
+}
+.st-key-login_pwd input {
+    text-align: center; border-radius: 10px !important; border: 3px solid transparent !important;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+}
+.st-key-login_btn {
+    position: fixed !important; top: calc(50vh + 118px) !important; left: 50%;
+    transform: translateX(-50%); z-index: 6;
+}
+</style>
+"""
+
+
+def _croc_stage_html(closing=False):
+    lower_cls = "croc-lower-jaw closing" if closing else "croc-lower-jaw"
+    mouth_cls = "croc-mouth-inside closing" if closing else "croc-mouth-inside"
+    return f"""
+    <div class="croc-stage">
+      <div class="{mouth_cls}"></div>
+      <div class="croc-jaw-top"></div>
+      <div class="croc-teeth-top"></div>
+      <div class="{lower_cls}">
+        <div class="croc-jaw-bottom"></div>
+        <div class="croc-teeth-bottom"></div>
+      </div>
+      <div class="croc-head-top">
+        <div class="croc-spot" style="width:30px;height:30px;top:60px;left:100px;"></div>
+        <div class="croc-spot" style="width:24px;height:24px;top:90px;left:390px;"></div>
+        <div class="croc-nostril left"></div>
+        <div class="croc-nostril right"></div>
+        <div class="croc-eye left"><div class="croc-pupil"></div></div>
+        <div class="croc-eye right"><div class="croc-pupil"></div></div>
+      </div>
+    </div>
+    """
+
+
 def require_login():
-    """Chặn truy cập nếu chưa nhập đúng mật khẩu chung của team. (Nút đăng
-    xuất nằm ở thanh bên trái, xem render_sidebar_nav().)"""
+    """Chặn truy cập nếu chưa nhập đúng mật khẩu chung của team — màn hình
+    cá sấu há miệng, gõ mật khẩu vào đúng vòm miệng nó. (Nút đăng xuất nằm
+    ở thanh bên trái, xem render_sidebar_nav().)"""
     if st.session_state.get("authed"):
         return
 
@@ -243,14 +371,51 @@ def require_login():
         )
         return
 
-    st.title("🎬 Video Tools")
-    pwd = st.text_input("Nhập mật khẩu truy cập", type="password")
-    if st.button("Vào"):
+    st.markdown(_LOGIN_CROC_CSS, unsafe_allow_html=True)
+    st.markdown('<div class="login-title">🎬 Video Tools</div>', unsafe_allow_html=True)
+
+    # Bọc trong 1 placeholder để có thể XOÁ SẠCH (ô nhập + nút) ngay khi
+    # đúng mật khẩu, thay bằng cảnh "ngậm miệng" — không có cách nào phát
+    # animation chuyển cảnh (transition) qua 2 lần rerun khác nhau trong
+    # Streamlit (mỗi lần rerun là 1 lần dựng lại DOM mới hoàn toàn), nên
+    # thay vào đó dùng animation TỰ CHẠY (@keyframes ... forwards) ngay khi
+    # phần tử "đang đóng" vừa được chèn vào trang — luôn chạy được bất kể
+    # DOM cũ trông ra sao trước đó.
+    stage_ph = st.empty()
+    with stage_ph.container():
+        st.markdown(_croc_stage_html(), unsafe_allow_html=True)
+        # Dùng st.form thay vì text_input + button rời — Streamlit chỉ
+        # "chốt" giá trị ô nhập khi bấm Enter/rời khỏi ô, nếu tách rời 2
+        # widget thì bấm nút ngay sau khi gõ có thể bị lỡ mất giá trị mới
+        # nhất (đã kiểm chứng thực tế bằng cách giả lập thao tác gõ+bấm).
+        # st.form gộp cả 2 lại, chốt giá trị đúng lúc bấm nút HOẶC bấm
+        # Enter trong ô — không còn rủi ro lỡ giá trị.
+        with st.form("login_form", clear_on_submit=False, border=False):
+            pwd = st.text_input(
+                "Mật khẩu", type="password", placeholder="Nhập mật khẩu...",
+                key="login_pwd", label_visibility="collapsed",
+            )
+            clicked = st.form_submit_button("Vào", key="login_btn")
+
+    if clicked:
         if pwd == correct_password:
+            stage_ph.empty()
+            st.markdown(_croc_stage_html(closing=True), unsafe_allow_html=True)
+            time.sleep(0.75)  # cho animation ngam mieng kip chay xong tren trinh duyet
             st.session_state["authed"] = True
             st.rerun()
         else:
-            st.error("Sai mật khẩu.")
+            st.markdown(
+                "<style>.st-key-login_pwd input {"
+                "border-color: #e53935 !important; animation: crocShake 0.45s; }</style>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div style="position:fixed; top:calc(50vh + 145px); left:50%; '
+                'transform:translateX(-50%); color:#ffb4b4; font-size:14px; z-index:6;">'
+                "Sai mật khẩu — cá sấu chưa cho vào 🐊</div>",
+                unsafe_allow_html=True,
+            )
     st.stop()
 
 
