@@ -765,6 +765,7 @@ def render_outro_swap():
         trademark_font_style = "Đậm"
         trademark_text_color = "#FFFFFF"
         trademark_stroke_color = "#000000"
+        trademark_path_style = trademark_core.PATH_STYLES[0]
         if add_trademark:
             settings_col, preview_col = st.columns([3, 2])
 
@@ -796,6 +797,14 @@ def render_outro_swap():
                 trademark_speed = st.slider(
                     "Tốc độ bay", 30, 400, 150, key="outro_trademark_speed",
                     help="Số nhỏ = bay chậm, số lớn = bay nhanh.",
+                )
+                trademark_path_style = st.selectbox(
+                    "Kiểu bay", trademark_core.PATH_STYLES, key="outro_trademark_path_style",
+                    help=(
+                        "Zigzag: nảy khắp khung hình kiểu logo DVD. "
+                        "Vòng tròn: quay theo hình tròn, tốc độ tự dao động "
+                        "nhanh/chậm liên tục kiểu tàu lượn siêu tốc."
+                    ),
                 )
                 st.caption(
                     "⚠️ Đường bay đi KHẮP khung hình (theo yêu cầu), nên có lúc sẽ đi "
@@ -834,7 +843,7 @@ def render_outro_swap():
                         preview_bytes = trademark_core.generate_preview_animation(
                             sample_frame, preview_overlay,
                             opacity=trademark_opacity / 100, size_percent=trademark_size,
-                            speed_px_per_sec=trademark_speed,
+                            speed_px_per_sec=trademark_speed, path_style=trademark_path_style,
                         )
                         # Dùng thẻ <img> nhúng trực tiếp (base64) thay vì
                         # st.image() — st.image() có thể chỉ hiện khung hình
@@ -923,7 +932,8 @@ def render_outro_swap():
                         trademark_core.apply_trademark(
                             r["path"], overlay_rgba, tm_path, workdir,
                             opacity=trademark_opacity / 100, size_percent=trademark_size,
-                            speed_px_per_sec=trademark_speed, skip_after_seconds=skip_after,
+                            speed_px_per_sec=trademark_speed, path_style=trademark_path_style,
+                            skip_after_seconds=skip_after,
                         )
                         r["path"].unlink(missing_ok=True)
                         r["path"] = tm_path

@@ -28,6 +28,7 @@ Dùng module (import từ app.py):
 """
 
 import io
+import math
 import subprocess
 from pathlib import Path
 
@@ -120,6 +121,33 @@ def _zigzag_position(t_seconds, max_x, max_y, speed_px_per_sec):
     return int(x), int(y)
 
 
+def _circular_position(t_seconds, max_x, max_y, speed_px_per_sec):
+    """Vị trí (x, y) bay theo đường TRÒN, nhưng tốc độ góc DAO ĐỘNG nhanh/
+    chậm theo thời gian (kiểu tàu lượn siêu tốc) thay vì quay đều — vẫn
+    dùng cùng 1 thanh trượt "Tốc độ bay" (đổi ra tốc độ góc dựa theo bán
+    kính) để người dùng không cần học thêm khái niệm mới cho từng kiểu bay."""
+    cx, cy = max_x / 2, max_y / 2
+    radius = max(min(cx, cy), 1.0)
+    base_omega = speed_px_per_sec / radius  # rad/giay, uoc luong tu toc do (px/s)
+    wobble_amp = 0.85  # do dao dong toc do quanh muc co ban (khong qua 1 de luon quay cung chieu)
+    wobble_freq = 1.3  # tan so dao dong nhanh/cham — mot vong nhanh/cham hoan chinh
+    # roi vao khoang vai giay (tuy toc do), du ngan de thay ro trong ca
+    # video xem truoc (vai giay) va video thuc te.
+    theta = base_omega * t_seconds + wobble_amp * math.sin(base_omega * wobble_freq * t_seconds)
+    x = cx + radius * math.cos(theta)
+    y = cy + radius * math.sin(theta)
+    return int(x), int(y)
+
+
+PATH_STYLES = ["Zigzag", "Vòng tròn (tốc độ đổi)"]
+
+
+def _compute_position(t_seconds, max_x, max_y, speed_px_per_sec, path_style):
+    if path_style == "Vòng tròn (tốc độ đổi)":
+        return _circular_position(t_seconds, max_x, max_y, speed_px_per_sec)
+    return _zigzag_position(t_seconds, max_x, max_y, speed_px_per_sec)
+
+
 def _blend_overlay_at(frame_bgr, overlay_rgba, x, y):
     """Dán `overlay_rgba` (RGBA) lên `frame_bgr` (BGR, sửa trực tiếp) tại
     góc trên-trái (x, y), trộn theo kênh alpha."""
@@ -142,14 +170,17 @@ def _blend_overlay_at(frame_bgr, overlay_rgba, x, y):
 
 def apply_trademark(video_path, overlay_rgba, out_path, workdir,
                      opacity=0.7, size_percent=15, speed_px_per_sec=120,
-                     skip_after_seconds=None):
+                     path_style="Zigzag", skip_after_seconds=None):
     """Gắn `overlay_rgba` (chữ hoặc logo, xem render_text_overlay /
-    load_logo_overlay) lên `video_path`, bay theo đường zigzag, xuất ra
-    `out_path`.
+    load_logo_overlay) lên `video_path`, bay theo đường (xem PATH_STYLES),
+    xuất ra `out_path`.
 
     - opacity: 0..1 (độ mờ — 1 = đậm hoàn toàn).
     - size_percent: kích thước trademark tính theo % chiều rộng video.
     - speed_px_per_sec: tốc độ bay (pixel/giây).
+    - path_style: 1 trong PATH_STYLES — "Zigzag" (nảy khắp khung hình) hoặc
+      "Vòng tròn (tốc độ đổi)" (quay tròn, tốc độ dao động nhanh/chậm kiểu
+      tàu lượn siêu tốc thay vì quay đều).
     - skip_after_seconds: nếu có, KHÔNG gắn trademark từ giây này tới hết
       video — dùng khi video đã có sẵn 1 đoạn outro riêng gắn ở cuối (vd
       tab "Cắt & Gắn Outro") và không muốn trademark bay đè lên đoạn đó.
@@ -200,7 +231,7 @@ def apply_trademark(video_path, overlay_rgba, out_path, workdir,
                 break
             t = frame_idx / fps
             if skip_after_seconds is None or t < skip_after_seconds:
-                x, y = _zigzag_position(t, max_x, max_y, speed_px_per_sec)
+                x, y = _compute_position(t, max_x, max_y, speed_px_per_sec, path_style)
                 frame = _blend_overlay_at(frame, overlay, x, y)
             proc.stdin.write(frame.tobytes())
             frame_idx += 1
@@ -216,7 +247,8 @@ def apply_trademark(video_path, overlay_rgba, out_path, workdir,
 
 
 def generate_preview_animation(sample_frame_bgr, overlay_rgba, opacity=0.7, size_percent=15,
-                                speed_px_per_sec=150, duration_sec=3.0, fps=8, preview_width=220):
+                                speed_px_per_sec=150, path_style="Zigzag",
+                                duration_sec=3.0, fps=8, preview_width=220):
     """Sinh 1 ảnh ĐỘNG nhỏ, NHANH (không dùng ffmpeg, chỉ vài khung hình độ
     phân giải thấp) để xem trước ngay khi chỉnh độ mờ/độ lớn/tốc độ — không
     cần đợi xử lý cả video mới biết trông ra sao. Trả về bytes ảnh WEBP động
@@ -241,7 +273,7 @@ def generate_preview_animation(sample_frame_bgr, overlay_rgba, opacity=0.7, size
     frames = []
     for i in range(int(duration_sec * fps)):
         t = i / fps
-        x, y = _zigzag_position(t, max_x, max_y, speed_px_per_sec)
+        x, y = _compute_position(t, max_x, max_y, speed_px_per_sec, path_style)
         frame = _blend_overlay_at(small_frame.copy(), overlay, x, y)
         frames.append(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
 
