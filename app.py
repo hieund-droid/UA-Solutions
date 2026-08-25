@@ -24,7 +24,6 @@ import random
 import re
 import shutil
 import tempfile
-import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -84,6 +83,9 @@ st.markdown(
         font-size: 1.02rem; font-weight: 600;
     }
     hr { margin: 1.6rem 0; }
+    /* Ẩn dòng gợi ý "Press Enter to submit form" Streamlit tự thêm vào mọi
+    form (màn đăng nhập, v.v.) — không cần thiết, rối mắt. */
+    [data-testid="InputInstructions"] { display: none !important; }
 
     /* Ẩn nút thu gọn/mở rộng GỐC của Streamlit (mũi tên « ở đầu sidebar +
     nút hiện lại khi đã ẩn hẳn) — chỉ dùng ĐÚNG 1 nút thu gọn/mở rộng tự
@@ -146,6 +148,10 @@ st.markdown(
     nhỏ, giống mẫu tham khảo) và nút "Log out" — tất cả theo tông tối. */
     .sidebar-title { color: #e8eaed; font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
     .sidebar-subtitle { color: #6b7280; font-size: 0.78rem; white-space: nowrap; margin-bottom: 0.5rem; }
+    .sidebar-user-email {
+        color: #6b7280; font-size: 0.72rem; white-space: nowrap; overflow: hidden;
+        text-overflow: ellipsis; margin-bottom: 0.4rem;
+    }
     /* Canh giữa nút thu gọn/mở rộng bằng flex trên chính khung chứa nó —
     KHÔNG dùng st.columns nữa (cột hẹp dần khi thu gọn từng cắt mất nửa
     nút), nên nút giờ luôn hiện tròn trịa, không bị hụt dù sidebar rộng hay
@@ -182,19 +188,31 @@ OUTRO_DIR.mkdir(exist_ok=True)
 OUTRO_CATEGORY_SLUGS = {"Photo app": "photo", "Language app": "language"}
 
 
-def _outro_dir_for(category):
-    d = OUTRO_DIR / OUTRO_CATEGORY_SLUGS[category]
+def _outro_dir_for(category, scope, user_id=None):
+    """scope="shared": outro CŨ, dùng chung cho cả team (đã có từ trước khi
+    tách workspace riêng theo người — giữ nguyên, KHÔNG xoá/di chuyển, chỉ
+    xem được chứ không sửa/xoá ở giao diện quản lý nữa, tránh 1 người lỡ
+    tay xoá mất tài sản chung).
+    scope="mine": outro RIÊNG của từng người (user_id = email đã làm sạch,
+    xem _safe_user_id) — từ nay outro tải lên mới sẽ vào đây, chỉ người đó
+    thấy được."""
+    slug = OUTRO_CATEGORY_SLUGS[category]
+    if scope == "shared":
+        d = OUTRO_DIR / slug
+    else:
+        d = OUTRO_DIR / "users" / user_id / slug
     d.mkdir(parents=True, exist_ok=True)
-    # Di cư dữ liệu cũ (1 file cố định outros/photo.mp4) sang cấu trúc thư
-    # mục mới nếu có, để không mất outro đã upload từ trước.
-    legacy_file = OUTRO_DIR / f"{OUTRO_CATEGORY_SLUGS[category]}.mp4"
-    if legacy_file.exists() and not any(d.iterdir()):
-        legacy_file.rename(d / legacy_file.name)
+    if scope == "shared":
+        # Di cư dữ liệu cũ (1 file cố định outros/photo.mp4) sang cấu trúc
+        # thư mục mới nếu có, để không mất outro đã upload từ trước.
+        legacy_file = OUTRO_DIR / f"{slug}.mp4"
+        if legacy_file.exists() and not any(d.iterdir()):
+            legacy_file.rename(d / legacy_file.name)
     return d
 
 
-def _list_outros(category):
-    d = _outro_dir_for(category)
+def _list_outros(category, scope, user_id=None):
+    d = _outro_dir_for(category, scope, user_id)
     files = [f for ext in ("*.mp4", "*.mov", "*.mkv") for f in d.glob(ext)]
     return sorted(files, key=lambda p: p.name.lower())
 
@@ -270,208 +288,62 @@ def _fade_thumb(thumb, amount=0.7):
     faded = thumb.astype(np.float32) * (1 - amount) + 255 * amount
     return faded.astype(np.uint8)
 
-# Mật khẩu chung chặn người lạ — đặt trong .streamlit/secrets.toml (máy này)
-# hoặc mục "Secrets" của Streamlit Cloud (lúc deploy), KHÔNG viết thẳng vào
-# code/git. Dạng: APP_PASSWORD = "..."
+# Đăng nhập cá nhân — mỗi người có 1 tài khoản riêng (tên đăng nhập + mật
+# khẩu) do BẠN (admin) tự đặt sẵn trong Secrets, KHÔNG cần thiết lập gì bên
+# Google Cloud cả. Nhờ vậy tách được workspace outro riêng cho từng người
+# (xem OUTRO_DIR, _outro_dir_for scope="mine").
 #
-# Đây là giải pháp tạm, đơn giản, làm được ngay không cần dịch vụ ngoài. Khi
-# nào cần chặt chẽ hơn (phân biệt từng người dùng theo email @apero.vn /
-# @talent.apero.vn) có thể nâng cấp sang đăng nhập Google (st.login) sau,
-# không phải viết lại gì nhiều — chỉ thay nội dung hàm require_login() này.
+# Cách thêm 1 tài khoản mới: vào .streamlit/secrets.toml (máy này) hoặc mục
+# "Secrets" của Streamlit Cloud (lúc deploy), thêm 1 dòng vào mục [users]:
+#   [users]
+#   duyen = "mat-khau-tu-dat"
+#   hieu = "mat-khau-khac"
+# Tên đăng nhập (vd "duyen") do bạn tự chọn, không nhất thiết là email.
 
 
-_LOGIN_CROC_CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Titan+One&display=swap');
-header[data-testid="stHeader"] { display: none; }
-.block-container { padding-top: 0 !important; }
-[data-testid="stAppViewContainer"], [data-testid="stMain"], body { background: #0d1b0f !important; }
-[data-testid="stForm"] { border: none !important; padding: 0 !important; background: transparent !important; }
-/* Ẩn nút "Vào" — chỉ giữ lại để Streamlit chấp nhận Enter là submit form
-(bắt buộc phải có 1 nút submit trong form), không cho hiện ra màn hình. */
-.st-key-login_btn { position: fixed !important; top: -200px; left: -200px; }
-/* Ẩn dòng gợi ý "Press Enter to submit form" Streamlit tự thêm vào form. */
-[data-testid="InputInstructions"] { display: none !important; }
-
-.login-title {
-    position: fixed; top: calc(50vh - 320px); left: 50%; transform: translateX(-50%);
-    font-family: 'Titan One', cursive;
-    color: #d9f2c4; font-size: 52px; letter-spacing: 0.03em;
-    text-shadow: 3px 3px 0 #1f4a20, -1px -1px 0 #1f4a20, 1px -1px 0 #1f4a20, -1px 1px 0 #1f4a20;
-    z-index: 6; text-align: center; width: 100%;
-}
-.croc-stage {
-    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: 520px; height: 520px; z-index: 1; pointer-events: none;
-}
-.croc-head-top {
-    position: absolute; top: 20px; left: 10px; width: 500px; height: 150px;
-    background: linear-gradient(180deg, #5aa64a 0%, #3f8a3a 100%);
-    border-radius: 250px 250px 20px 20px / 140px 140px 10px 10px;
-    box-shadow: inset 0 -8px 18px rgba(0,0,0,0.15);
-}
-.croc-spot { position: absolute; background: #2f6b30; border-radius: 50%; opacity: 0.5; }
-.croc-eye {
-    position: absolute; top: 18px; width: 50px; height: 50px;
-    background: #eede9a; border-radius: 50%; border: 4px solid #3f8a3a;
-    display: flex; align-items: center; justify-content: center;
-}
-.croc-eye.left { left: 90px; }
-.croc-eye.right { right: 90px; }
-.croc-pupil { width: 18px; height: 18px; background: #1a1a1a; border-radius: 50%; }
-.croc-nostril {
-    position: absolute; top: 6px; width: 14px; height: 18px;
-    background: #1f4a20; border-radius: 50%;
-}
-.croc-nostril.left { left: 235px; }
-.croc-nostril.right { right: 235px; }
-
-.croc-jaw-top {
-    position: absolute; top: 170px; left: 10px; width: 500px; height: 40px;
-    background: #4a9640; border-radius: 30px 30px 0 0;
-}
-.croc-teeth-top {
-    position: absolute; top: 196px; left: 10px; width: 500px; height: 30px;
-    background: #f5f0e0;
-    clip-path: polygon(
-      2% 0%, 10% 0%, 14% 100%, 18% 0%, 26% 0%, 30% 100%, 34% 0%,
-      42% 0%, 46% 100%, 50% 0%, 58% 0%, 62% 100%, 66% 0%,
-      74% 0%, 78% 100%, 82% 0%, 90% 0%, 94% 100%, 98% 0%
-    );
-}
-.croc-mouth-inside {
-    position: absolute; top: 200px; left: 40px; width: 440px; height: 180px;
-    background: radial-gradient(ellipse at center, #8a2828 0%, #4a1010 100%);
-    border-radius: 24px; box-shadow: inset 0 6px 20px rgba(0,0,0,0.5);
-    transition: opacity 0.25s ease 0.3s;
-}
-.croc-stage.closing .croc-mouth-inside { opacity: 0; }
-
-.croc-lower-jaw-group { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; }
-.croc-lower-jaw-group.closing { animation: crocCloseJaw 0.6s cubic-bezier(0.55,0,0.1,1) forwards; }
-.croc-jaw-bottom {
-    position: absolute; top: 365px; left: 10px; width: 500px; height: 140px;
-    background: linear-gradient(180deg, #3f8a3a 0%, #2d6b2c 100%);
-    border-radius: 0 0 200px 200px / 0 0 110px 110px;
-}
-.croc-teeth-bottom {
-    position: absolute; top: 350px; left: 10px; width: 500px; height: 30px;
-    background: #f5f0e0;
-    clip-path: polygon(
-      2% 100%, 10% 100%, 14% 0%, 18% 100%, 26% 100%, 30% 0%, 34% 100%,
-      42% 100%, 46% 0%, 50% 100%, 58% 100%, 62% 0%, 66% 100%,
-      74% 100%, 78% 0%, 82% 100%, 90% 100%, 94% 0%, 98% 100%
-    );
-}
-
-@keyframes crocCloseJaw { from { transform: translateY(0); } to { transform: translateY(-158px); } }
-@keyframes crocShake {
-    10%, 90% { transform: translateX(-1px); }
-    20%, 80% { transform: translateX(2px); }
-    30%, 50%, 70% { transform: translateX(-5px); }
-    40%, 60% { transform: translateX(5px); }
-}
-
-/* Định vị lại ô nhập mật khẩu (widget thật của Streamlit) để nằm ĐÚNG vào
-khoang miệng cá sấu vẽ ở trên — xem _croc_stage_html(). */
-.st-key-login_pwd {
-    position: fixed !important; top: calc(50% + 20px) !important; left: 50%;
-    transform: translateX(-50%); width: 280px !important; z-index: 6;
-}
-.st-key-login_pwd input {
-    text-align: center; border-radius: 10px !important; border: 3px solid transparent !important;
-    box-shadow: 0 3px 10px rgba(0,0,0,0.35);
-}
-</style>
-"""
-
-
-def _croc_stage_html(closing=False):
-    stage_cls = "croc-stage closing" if closing else "croc-stage"
-    lower_cls = "croc-lower-jaw-group closing" if closing else "croc-lower-jaw-group"
-    return f"""
-    <div class="{stage_cls}">
-      <div class="croc-mouth-inside"></div>
-      <div class="croc-jaw-top"></div>
-      <div class="croc-teeth-top"></div>
-      <div class="{lower_cls}">
-        <div class="croc-jaw-bottom"></div>
-        <div class="croc-teeth-bottom"></div>
-      </div>
-      <div class="croc-head-top">
-        <div class="croc-spot" style="width:30px;height:30px;top:60px;left:100px;"></div>
-        <div class="croc-spot" style="width:24px;height:24px;top:90px;left:390px;"></div>
-        <div class="croc-nostril left"></div>
-        <div class="croc-nostril right"></div>
-        <div class="croc-eye left"><div class="croc-pupil"></div></div>
-        <div class="croc-eye right"><div class="croc-pupil"></div></div>
-      </div>
-    </div>
-    """
+def _safe_user_id(name):
+    """Chuyển tên đăng nhập thành tên thư mục an toàn (chỉ chữ/số/_/-/.) —
+    dùng để tách workspace outro riêng cho từng người."""
+    return re.sub(r"[^a-zA-Z0-9_.-]", "_", (name or "unknown").lower())
 
 
 def require_login():
-    """Chặn truy cập nếu chưa nhập đúng mật khẩu chung của team — màn hình
-    cá sấu há miệng, gõ mật khẩu vào đúng vòm miệng nó. (Nút đăng xuất nằm
-    ở thanh bên trái, xem render_sidebar_nav().)"""
-    if st.session_state.get("authed"):
+    """Chặn truy cập nếu chưa đăng nhập bằng 1 trong các tài khoản đã đặt
+    sẵn trong Secrets (mục [users]). (Nút đăng xuất nằm ở thanh bên trái,
+    xem render_sidebar_nav().)"""
+    if st.session_state.get("authed_user"):
         return
 
-    correct_password = st.secrets.get("APP_PASSWORD")
-    if not correct_password:
+    users = st.secrets.get("users", {})
+    if not users:
         st.warning(
-            "⚠️ Chưa đặt mật khẩu (APP_PASSWORD trong Secrets) — hiện ai có "
-            "link cũng vào dùng được. Nhớ đặt mật khẩu trước khi chia sẻ link "
-            "cho người khác."
+            "⚠️ Chưa thiết lập tài khoản nào (mục [users] trong Secrets) — "
+            "app hiện KHÔNG chặn ai cả. Cần thêm ít nhất 1 tài khoản trước "
+            "khi chia sẻ link cho người khác."
         )
         return
 
-    st.markdown(_LOGIN_CROC_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="login-title">UA Agent</div>', unsafe_allow_html=True)
-
-    # Bọc trong 1 placeholder để có thể XOÁ SẠCH (ô nhập + nút) ngay khi
-    # đúng mật khẩu, thay bằng cảnh "ngậm miệng" — không có cách nào phát
-    # animation chuyển cảnh (transition) qua 2 lần rerun khác nhau trong
-    # Streamlit (mỗi lần rerun là 1 lần dựng lại DOM mới hoàn toàn), nên
-    # thay vào đó dùng animation TỰ CHẠY (@keyframes ... forwards) ngay khi
-    # phần tử "đang đóng" vừa được chèn vào trang — luôn chạy được bất kể
-    # DOM cũ trông ra sao trước đó.
-    stage_ph = st.empty()
-    with stage_ph.container():
-        st.markdown(_croc_stage_html(), unsafe_allow_html=True)
-        # Dùng st.form thay vì text_input + button rời — Streamlit chỉ
-        # "chốt" giá trị ô nhập khi bấm Enter/rời khỏi ô, nếu tách rời 2
-        # widget thì bấm nút ngay sau khi gõ có thể bị lỡ mất giá trị mới
-        # nhất (đã kiểm chứng thực tế bằng cách giả lập thao tác gõ+bấm).
-        # st.form gộp cả 2 lại, chốt giá trị đúng lúc bấm nút HOẶC bấm
-        # Enter trong ô — không còn rủi ro lỡ giá trị.
-        with st.form("login_form", clear_on_submit=False, border=False):
-            pwd = st.text_input(
-                "Mật khẩu", type="password", placeholder="Nhập mật khẩu...",
-                key="login_pwd", label_visibility="collapsed",
-            )
-            clicked = st.form_submit_button("Vào", key="login_btn")
+    st.title("🎬 UA Solutions")
+    st.caption("Đăng nhập bằng tài khoản được cấp để dùng tool.")
+    with st.form("login_form", border=False):
+        username = st.text_input("Tên đăng nhập")
+        password = st.text_input("Mật khẩu", type="password")
+        clicked = st.form_submit_button("Đăng nhập", type="primary")
 
     if clicked:
-        if pwd == correct_password:
-            stage_ph.empty()
-            st.markdown(_croc_stage_html(closing=True), unsafe_allow_html=True)
-            time.sleep(0.75)  # cho animation ngam mieng kip chay xong tren trinh duyet
-            st.session_state["authed"] = True
+        if username in users and password == users[username]:
+            st.session_state["authed_user"] = username
+            st.session_state["user_id"] = _safe_user_id(username)
+            st.session_state["user_email"] = username
             st.rerun()
         else:
-            st.markdown(
-                "<style>.st-key-login_pwd input {"
-                "border-color: #e53935 !important; animation: crocShake 0.45s; }</style>",
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                '<div style="position:fixed; top:calc(50% + 75px); left:50%; '
-                'transform:translateX(-50%); color:#ffb4b4; font-size:14px; z-index:6;">'
-                "Sai mật khẩu — cá sấu chưa cho vào 🐊</div>",
-                unsafe_allow_html=True,
-            )
+            st.error("Sai tên đăng nhập hoặc mật khẩu.")
     st.stop()
+
+
+def _do_logout():
+    for key in ("authed_user", "user_id", "user_email"):
+        st.session_state.pop(key, None)
 
 
 require_login()
@@ -811,15 +683,29 @@ def render_outro_swap():
         if key not in st.session_state:
             st.session_state[key] = default
 
-    with st.expander("⚙️ Quản lý outro của tôi"):
+    user_id = st.session_state.get("user_id", "unknown")
+
+    with st.expander("⚙️ Outro của tôi"):
         for category in OUTRO_CATEGORY_SLUGS:
             st.markdown(f"**{category}**")
-            outro_dir = _outro_dir_for(category)
-            existing = _list_outros(category)
 
-            if existing:
+            shared_existing = _list_outros(category, "shared")
+            if shared_existing:
+                st.caption("Dùng chung (cả team, chỉ xem — không sửa/xoá được ở đây)")
                 cols = st.columns(4)
-                for idx, f in enumerate(existing):
+                for idx, f in enumerate(shared_existing):
+                    with cols[idx % 4]:
+                        st.video(str(f))
+                        dur = _outro_duration(str(f), f.stat().st_mtime)
+                        st.caption(f"{f.stem} · {dur:.1f}s")
+
+            st.caption("Của tôi (chỉ mình bạn thấy)")
+            mine_dir = _outro_dir_for(category, "mine", user_id)
+            mine_existing = _list_outros(category, "mine", user_id)
+
+            if mine_existing:
+                cols = st.columns(4)
+                for idx, f in enumerate(mine_existing):
                     with cols[idx % 4]:
                         # Mục quản lý xem lại được toàn bộ video (đúng chất
                         # lượng gốc), KHÁC với ảnh nhỏ ở mục tích chọn bên
@@ -849,10 +735,10 @@ def render_outro_swap():
                             f.unlink(missing_ok=True)
                             st.rerun()
             else:
-                st.caption("Chưa có outro nào — thêm ở ô bên dưới.")
+                st.caption("Chưa có outro riêng nào — thêm ở ô bên dưới.")
 
             new_files = st.file_uploader(
-                f"Thêm outro cho {category}",
+                f"Thêm outro riêng cho {category}",
                 type=["mp4", "mov", "mkv"], accept_multiple_files=True,
                 key=f"outro_upload_multi_{category}",
             )
@@ -864,9 +750,9 @@ def render_outro_swap():
                 sig = tuple((f.name, f.size) for f in new_files)
                 if st.session_state.get(f"outro_saved_sig_{category}") != sig:
                     for f in new_files:
-                        (outro_dir / f.name).write_bytes(f.getvalue())
+                        (mine_dir / f.name).write_bytes(f.getvalue())
                     st.session_state[f"outro_saved_sig_{category}"] = sig
-                    st.success(f"Đã thêm {len(new_files)} outro vào '{category}'.")
+                    st.success(f"Đã thêm {len(new_files)} outro riêng vào '{category}'.")
                     st.rerun()
             st.divider()
 
@@ -891,30 +777,39 @@ def render_outro_swap():
 
     outro_category = st.selectbox("Loại outro của tôi", list(OUTRO_CATEGORY_SLUGS.keys()),
                                    key="outro_category_choice")
-    available_outros = _list_outros(outro_category)
+    # Gộp outro dùng chung (cả team) + outro riêng (của mình) vào chung 1
+    # lưới để tích chọn — mỗi outro gắn "uid" riêng (scope + tên file) vì
+    # 2 file trùng tên nhau (vd 1 outro dùng chung và 1 outro riêng cùng
+    # tên) vẫn phải là 2 ô tích KHÁC NHAU, không được dùng chung 1 key.
+    combined_outros = (
+        [("shared", f) for f in _list_outros(outro_category, "shared")]
+        + [("mine", f) for f in _list_outros(outro_category, "mine", user_id)]
+    )
 
     chosen_outro_path = None
-    if not available_outros:
+    if not combined_outros:
         st.caption(f"Chưa có outro cho '{outro_category}' — không chọn cũng được, vẫn cắt outro đối thủ bình thường.")
     else:
         st.write("Chọn outro muốn dùng:")
-        all_names = [f.name for f in available_outros]
-        selected_name = next(
-            (n for n in all_names if st.session_state.get(f"outro_tick_{outro_category}_{n}")), None,
+        all_uids = [f"{scope}|{f.name}" for scope, f in combined_outros]
+        selected_uid = next(
+            (u for u in all_uids if st.session_state.get(f"outro_tick_{outro_category}_{u}")), None,
         )
         cols = st.columns(6)
         picked = []
-        for idx, f in enumerate(available_outros):
+        for idx, (scope, f) in enumerate(combined_outros):
+            uid = f"{scope}|{f.name}"
             with cols[idx % 6]:
                 thumb, dur = _outro_preview(str(f), f.stat().st_mtime)
-                if selected_name is not None and f.name != selected_name:
+                if selected_uid is not None and uid != selected_uid:
                     thumb = _fade_thumb(thumb)  # KHONG duoc chon -> lam mo trang di, noi bat cai dang chon
                 if thumb is not None:
                     st.image(thumb, use_container_width=True)
+                tag = " · chung" if scope == "shared" else ""
                 if st.checkbox(
-                    f"{f.stem} ({dur:.1f}s)", key=f"outro_tick_{outro_category}_{f.name}",
+                    f"{f.stem} ({dur:.1f}s){tag}", key=f"outro_tick_{outro_category}_{uid}",
                     on_change=_enforce_single_outro_tick,
-                    args=(outro_category, f.name, all_names),
+                    args=(outro_category, uid, all_uids),
                 ):
                     picked.append(f)
 
@@ -1326,7 +1221,7 @@ def _sidebar_state_css(collapsed, active_key):
     rules = [
         f'section[data-testid="stSidebar"] {{ width: {width} !important; min-width: {width} !important; }}',
         f'[class*="st-key-nav_"] button p {{ display: {label_display}; }}',
-        f'.sidebar-title, .sidebar-subtitle, .st-key-logout_btn button p {{ display: {text_display}; }}',
+        f'.sidebar-title, .sidebar-subtitle, .sidebar-user-email, .st-key-logout_btn button p {{ display: {text_display}; }}',
     ]
     for item in NAV_ITEMS:
         cls = f'.st-key-nav_{item["key"]} button'
@@ -1370,9 +1265,13 @@ with st.sidebar:
     # Vùng DƯỚI (tài khoản/đăng xuất) — ghim hẳn xuống cuối, tách biệt bằng
     # viền trên, xem .st-key-sidebar_footer.
     with st.container(key="sidebar_footer"):
+        st.markdown(
+            f'<div class="sidebar-user-email">{st.session_state.get("user_email", "")}</div>',
+            unsafe_allow_html=True,
+        )
         st.button(
             "Log out", icon=":material/logout:", key="logout_btn", use_container_width=True,
-            on_click=lambda: st.session_state.pop("authed", None),
+            on_click=_do_logout,
         )
 
 active_item = next(x for x in NAV_ITEMS if x["key"] == st.session_state.nav_page)
