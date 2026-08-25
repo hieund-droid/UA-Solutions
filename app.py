@@ -323,21 +323,65 @@ def require_login():
         )
         return
 
-    st.title("🎬 UA Solutions")
-    st.caption("Đăng nhập bằng tài khoản được cấp để dùng tool.")
-    with st.form("login_form", border=False):
-        username = st.text_input("Tên đăng nhập")
-        password = st.text_input("Mật khẩu", type="password")
-        clicked = st.form_submit_button("Đăng nhập", type="primary")
+    # Style riêng cho màn đăng nhập — canh giữa màn hình, tông tối tối giản
+    # đồng bộ với thanh bên (cùng nền #14161b, viền #22252c, chữ xám #9aa0a6,
+    # xem CSS toàn cục phía trên). Chỉ chèn khi màn đăng nhập đang hiện, vì
+    # không cần dùng ở đâu khác.
+    st.markdown(
+        """
+        <style>
+        .st-key-login_page {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: 80vh;
+        }
+        /* Streamlit tự bọc thêm 1 lớp "stLayoutWrapper" bên trong, mặc định
+        kéo giãn hết chiều ngang của cha — làm align-items: center ở trên vô
+        tác dụng (không có gì để canh giữa vì đã chiếm hết bề rộng). Ép nó
+        co lại vừa đúng nội dung (login_card, max-width 340px) thì mới canh
+        giữa được. */
+        .st-key-login_page > [data-testid="stLayoutWrapper"] {
+            width: fit-content !important; margin: 0 auto !important;
+        }
+        .st-key-login_card {
+            background: #14161b; border: 1px solid #22252c; border-radius: 16px;
+            padding: 2.6rem 2.4rem; width: 100%; max-width: 340px;
+        }
+        .login-title { color: #e8eaed; font-weight: 700; font-size: 1.3rem; text-align: center; }
+        .login-subtitle { color: #6b7280; font-size: 0.82rem; text-align: center; margin-bottom: 1.6rem; }
+        .st-key-login_card [data-testid="stTextInput"] label { color: #9aa0a6 !important; font-size: 0.82rem; }
+        .st-key-login_card [data-testid="stTextInput"] input {
+            background: #1e2129 !important; border: 1px solid #2a2d35 !important;
+            color: #e8eaed !important; border-radius: 8px !important;
+        }
+        .st-key-login_card [data-testid="stFormSubmitButton"] button {
+            width: 100%; background: #f5a623 !important; border-color: #f5a623 !important;
+            color: #14161b !important; font-weight: 700; margin-top: 0.4rem; border-radius: 8px !important;
+        }
+        .st-key-login_card [data-testid="stFormSubmitButton"] button:hover {
+            background: #ffb733 !important; border-color: #ffb733 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    if clicked:
-        if username in users and password == users[username]:
-            st.session_state["authed_user"] = username
-            st.session_state["user_id"] = _safe_user_id(username)
-            st.session_state["user_email"] = username
-            st.rerun()
-        else:
-            st.error("Sai tên đăng nhập hoặc mật khẩu.")
+    with st.container(key="login_page"):
+        with st.container(key="login_card"):
+            st.markdown('<div class="login-title">UA Solutions</div>', unsafe_allow_html=True)
+            st.markdown('<div class="login-subtitle">Đăng nhập để tiếp tục</div>', unsafe_allow_html=True)
+            with st.form("login_form", border=False):
+                username = st.text_input("Tên đăng nhập")
+                password = st.text_input("Mật khẩu", type="password")
+                clicked = st.form_submit_button("Đăng nhập", type="primary")
+
+            if clicked:
+                if username in users and password == users[username]:
+                    st.session_state["authed_user"] = username
+                    st.session_state["user_id"] = _safe_user_id(username)
+                    st.session_state["user_email"] = username
+                    st.rerun()
+                else:
+                    st.error("Sai tên đăng nhập hoặc mật khẩu.")
     st.stop()
 
 
