@@ -339,10 +339,7 @@ def render_video_remixer():
     """Tab 'Video Remixer' — HÀNH VI GIỮ NGUYÊN 100% so với trước, chỉ tách
     ra thành hàm riêng để dùng chung giao diện với tab 'Cắt & Gắn Outro'."""
     st.title("🎬 Video Remixer")
-    st.caption(
-        "Tách nhiều video thành từng đoạn theo cảnh, trộn lẫn ngẫu nhiên, "
-        "ghép lại thành nhiều video mới."
-    )
+    st.caption("Tách cảnh, trộn ngẫu nhiên, ghép thành video mới.")
 
     for key, default in [
         ("outputs", []), ("scene_warning", None), ("variant_warning", None),
@@ -352,7 +349,7 @@ def render_video_remixer():
             st.session_state[key] = default
 
     uploaded_files = st.file_uploader(
-        "Kéo-thả các video vào đây (có thể chọn nhiều video cùng lúc)",
+        "Kéo-thả video vào đây",
         type=["mp4", "mov", "mkv", "avi", "webm"],
         accept_multiple_files=True,
         key="remix_uploader",
@@ -360,44 +357,32 @@ def render_video_remixer():
     has_files = bool(uploaded_files)
 
     has_outro = st.checkbox(
-        "Mỗi video có đoạn outro/logo cố định ở cuối",
+        "Mỗi video có outro/logo cố định ở cuối",
         value=False,
-        help=(
-            "Bật lên nếu video nào cũng kết thúc bằng 1 đoạn giống nhau (logo, CTA...). "
-            "Tool sẽ coi đoạn CUỐI CÙNG của mỗi video là outro, tách riêng ra khỏi rổ "
-            "trộn (không xáo trộn lẫn vào giữa), và chỉ gắn đúng 1 outro vào cuối mỗi "
-            "video kết quả — dù nhiều video nguồn cùng có outro giống hệt nhau."
-        ),
+        help="Tách riêng đoạn cuối ra khỏi rổ trộn, chỉ gắn lại 1 lần vào mỗi video kết quả.",
     )
 
     merge_similar = st.checkbox(
-        "Gộp lại các đoạn nhìn giống nhau (giảm tách vụn do rung lắc/mất nét/đổi filter)",
+        "Gộp các đoạn giống nhau (giảm tách vụn)",
         value=True,
-        help=(
-            "So sánh hình ảnh ở ranh giới 2 đoạn liền kề; nếu giống nhau thì gộp lại "
-            "thành 1 đoạn thay vì tách rời. Đây là so khung hình chứ không nhận diện "
-            "khuôn mặt/bối cảnh thật, nên chỉ giảm bớt tách vụn chứ không đảm bảo "
-            "đúng 100% — nếu filter đổi quá mạnh vẫn có thể bị tách nhầm."
-        ),
+        help="Gộp lại nếu 2 đoạn liền kề nhìn giống nhau — không đảm bảo đúng 100%.",
     )
 
-    with st.expander("Tuỳ chọn nâng cao (không cần đụng vào nếu không rõ)"):
+    with st.expander("Tuỳ chọn nâng cao"):
         detector = st.selectbox(
             "Cách nhận diện đoạn cắt",
             ["content", "adaptive"],
-            help="'content' phù hợp đa số trường hợp. Nếu tách sai nhiều, thử 'adaptive'.",
+            help="'content' phù hợp đa số trường hợp, tách sai nhiều thì thử 'adaptive'.",
         )
         threshold = st.number_input(
-            "Độ nhạy cắt cảnh (số nhỏ hơn = nhạy hơn, dễ tách vụn)",
+            "Độ nhạy cắt cảnh (nhỏ hơn = nhạy hơn)",
             min_value=1.0, max_value=100.0, value=27.0, step=1.0,
         )
         min_scene_len = st.number_input(
-            "Độ dài scene tối thiểu khi dò (giây) — tăng lên nếu bị tách vụn 1 cảnh "
-            "thành nhiều đoạn",
-            min_value=0.0, value=0.5, step=0.1,
+            "Độ dài scene tối thiểu (giây)", min_value=0.0, value=0.5, step=0.1,
         )
         merge_threshold = st.number_input(
-            "Ngưỡng 'giống nhau' để gộp đoạn (0-64, thấp = khắt khe hơn)",
+            "Ngưỡng gộp đoạn giống nhau (0-64, thấp = khắt khe hơn)",
             min_value=0, max_value=64, value=8, step=1, disabled=not merge_similar,
         )
         min_clip_len = st.number_input(
@@ -406,7 +391,7 @@ def render_video_remixer():
         max_clips = st.number_input(
             "Giới hạn số đoạn mỗi video mới (0 = không giới hạn)", min_value=0, value=0, step=1
         )
-        use_seed = st.checkbox("Cố định kết quả ngẫu nhiên (để tái lập lần sau)")
+        use_seed = st.checkbox("Cố định kết quả ngẫu nhiên")
         seed = st.number_input("Seed", min_value=0, value=42, step=1, disabled=not use_seed)
         keep_clips = st.checkbox("Giữ lại các đoạn lẻ đã tách")
         strip_audio = st.checkbox("Bỏ âm thanh trong video mới")
@@ -420,7 +405,7 @@ def render_video_remixer():
 
     st.divider()
     st.subheader("Bước 1 — Phân tích")
-    st.caption("Dò thử xem mỗi video tách được bao nhiêu đoạn, trước khi quyết định tạo bao nhiêu biến thể.")
+    st.caption("Xem trước số đoạn tách được.")
 
     if st.button("Phân tích video", disabled=not has_files):
         workdir, input_paths = save_uploads(uploaded_files)
@@ -454,48 +439,26 @@ def render_video_remixer():
             elif n_content >= 3:
                 avg_len = dur / max(len(a["scenes"]), 1)
                 if avg_len < 1.0:
-                    notes.append(
-                        f"⚠️ trung bình mỗi đoạn chỉ ~{avg_len:.1f}s — có thể đang bị "
-                        "tách vụn 1 cảnh thành nhiều đoạn. Thử tăng 'Độ nhạy cắt cảnh' "
-                        "hoặc 'Độ dài scene tối thiểu' trong Tuỳ chọn nâng cao."
-                    )
+                    notes.append(f"⚠️ trung bình ~{avg_len:.1f}s/đoạn — có thể bị tách vụn")
             note_text = ("  " + " | ".join(notes)) if notes else ""
             st.write(f"- **{a['path'].name}**: {n_content} đoạn nội dung, {dur:.1f}s{outro_note}{note_text}")
 
         if has_outro and n_with_outro == 0:
-            st.warning(
-                "Đã bật 'có outro' nhưng không video nào tách được từ 2 đoạn trở lên "
-                "để tách outro riêng — tool sẽ dùng cả video làm nội dung, không có outro."
-            )
+            st.warning("Không video nào tách được ≥2 đoạn để tách outro — dùng cả video làm nội dung.")
 
-        st.success(
-            f"Tổng cộng **{total_clips} đoạn nội dung** từ {len(analyzed)} video, "
-            f"tổng ~{total_duration:.1f} giây gốc."
-        )
+        st.success(f"Tổng **{total_clips} đoạn** từ {len(analyzed)} video, ~{total_duration:.1f}s gốc.")
         suggested = max(1, min(total_clips, 20))
-        st.info(
-            f"Gợi ý của tôi (không phải con số chính xác, chỉ ước lượng theo "
-            f"**số đoạn tách được** — càng nhiều đoạn thì càng ghép được nhiều tổ "
-            f"hợp khác nhau, không phụ thuộc thời lượng video dài hay ngắn): thử "
-            f"khoảng **{suggested} biến thể**. Đây chỉ là điểm khởi đầu để tham "
-            "khảo — một đoạn được dùng lại ở vài biến thể khác nhau là bình "
-            "thường, tool sẽ tự kiểm tra khi bấm 'Tạo biến thể' và cảnh báo rõ "
-            "nếu có cặp nào bị trùng quá nhiều."
-        )
+        st.info(f"Gợi ý: thử khoảng **{suggested} biến thể** (ước lượng theo số đoạn tách được).")
     elif has_files:
-        st.caption("Chưa phân tích — bấm nút phía trên để xem trước số đoạn.")
+        st.caption("Chưa phân tích — bấm nút phía trên.")
 
     st.divider()
     st.subheader("Bước 2 — Tạo biến thể")
 
     duration_range = st.slider(
-        "Thời lượng mỗi video mới (giây, không tính outro nếu có)",
+        "Thời lượng mỗi video mới (giây)",
         min_value=5, max_value=120, value=(30, 45),
-        help=(
-            "Mỗi biến thể sẽ ưu tiên ghép trong khoảng này. Nếu 1 đoạn dài hơn mức "
-            "tối đa mà video vẫn chưa đạt mức tối thiểu, tool vẫn giữ nguyên đoạn đó "
-            "(không cắt bớt, không bỏ phí creative) thay vì cắt ngắn hay loại bỏ."
-        ),
+        help="Nếu 1 đoạn dài hơn mức tối đa, vẫn giữ nguyên (không cắt bớt).",
     )
     target_min, target_max = duration_range
 
@@ -507,7 +470,7 @@ def render_video_remixer():
         "Đặt tên file xuất ra (tuỳ chọn)",
         placeholder="vd: hieund.apero → hieund.apero.1, hieund.apero.2, ...",
         key="remix_output_name",
-        help="Để trống thì dùng tên tự động (remix_01, remix_02, ...).",
+        help="Để trống thì dùng tên tự động.",
     )
 
     run_clicked = st.button("Tạo biến thể", type="primary", disabled=not has_files)
@@ -538,10 +501,7 @@ def render_video_remixer():
                 def on_source(i, total, name, n_scenes, n_clips):
                     status.write(f"[{i + 1}/{total}] {name}: {n_scenes} đoạn tìm thấy")
                     if n_scenes <= 1:
-                        warnings.append(
-                            f"'{name}' chỉ tìm thấy 1 đoạn duy nhất — có thể tách chưa "
-                            "đúng. Thử giảm 'Độ nhạy cắt cảnh' hoặc chọn 'adaptive'."
-                        )
+                        warnings.append(f"'{name}' chỉ 1 đoạn — thử giảm 'Độ nhạy cắt cảnh'.")
                     progress.progress(0.0)
 
                 def on_progress(done, total):
@@ -558,10 +518,7 @@ def render_video_remixer():
                     st.session_state.scene_warning = " | ".join(warnings)
 
                 if not clips:
-                    raise RuntimeError(
-                        "Không tách được đoạn nào từ các video đã tải lên. "
-                        "Giảm 'Bỏ qua đoạn ngắn hơn' hoặc 'Độ nhạy cắt cảnh'."
-                    )
+                    raise RuntimeError("Không tách được đoạn nào — thử giảm 'Bỏ qua đoạn ngắn hơn' hoặc 'Độ nhạy cắt cảnh'.")
 
                 clip_durs = {c: core.ffprobe_info(c)["duration"] for c in clips}
                 status.write(f"Tổng cộng {len(clips)} đoạn nội dung trong rổ chung.")
@@ -628,17 +585,13 @@ def render_outro_swap():
     thay thế, GIỮ NGUYÊN nội dung gốc — không xáo trộn/ghép video với nhau.
     Mỗi video đầu vào cho ra đúng 1 video kết quả tương ứng."""
     st.title("✂️ Cắt & Gắn Outro")
-    st.caption(
-        "Tải lên nhiều video của ĐỐI THỦ (có đoạn giới thiệu app/CTA giống "
-        "nhau ở cuối) — tool tự động cắt bỏ outro đó và gắn outro của bạn "
-        "vào thay thế, giữ nguyên toàn bộ nội dung phía trước."
-    )
+    st.caption("Cắt outro đối thủ ở cuối video, gắn outro của bạn vào thay thế.")
 
-    for key, default in [("outro_outputs", []), ("outro_run_error", None)]:
+    for key, default in [("outro_outputs", []), ("outro_run_error", None), ("outro_uploader_version", 0)]:
         if key not in st.session_state:
             st.session_state[key] = default
 
-    with st.expander("⚙️ Quản lý outro của tôi (lưu nhiều outro mỗi loại, dùng lại nhiều lần)"):
+    with st.expander("⚙️ Quản lý outro của tôi"):
         for category in OUTRO_CATEGORY_SLUGS:
             st.markdown(f"**{category}**")
             outro_dir = _outro_dir_for(category)
@@ -676,10 +629,10 @@ def render_outro_swap():
                             f.unlink(missing_ok=True)
                             st.rerun()
             else:
-                st.caption("Chưa có outro nào cho loại này — thêm ở ô bên dưới.")
+                st.caption("Chưa có outro nào — thêm ở ô bên dưới.")
 
             new_files = st.file_uploader(
-                f"Thêm outro mới cho {category} (chọn được nhiều file cùng lúc)",
+                f"Thêm outro cho {category}",
                 type=["mp4", "mov", "mkv"], accept_multiple_files=True,
                 key=f"outro_upload_multi_{category}",
             )
@@ -698,14 +651,23 @@ def render_outro_swap():
             st.divider()
 
     uploaded_files = st.file_uploader(
-        "Kéo-thả video của đối thủ vào đây — có thể tải rất nhiều video cùng lúc, "
-        "kể cả TRỘN LẪN nhiều app/đối thủ khác nhau, tool tự tách đúng theo từng "
-        "nhóm (mỗi nhóm cần ≥2 video cùng outro mới nhận diện chính xác được)",
+        "Kéo-thả video đối thủ vào đây",
         type=["mp4", "mov", "mkv", "avi", "webm"],
         accept_multiple_files=True,
-        key="outro_uploader",
+        # Key đổi theo "outro_uploader_version" — tăng số này lên (nút xoá
+        # bên dưới) là cách duy nhất để RESET hẳn ô tải lên (Streamlit không
+        # có cách "xoá file đã chọn" nào khác ngoài đổi key sang 1 widget
+        # coi như hoàn toàn mới).
+        key=f"outro_uploader_{st.session_state.outro_uploader_version}",
     )
     has_files = bool(uploaded_files)
+
+    if has_files or st.session_state.outro_outputs:
+        if st.button("🗑️ Xoá hết video & làm mẻ mới", key="outro_clear_batch"):
+            st.session_state.outro_uploader_version += 1
+            st.session_state.outro_outputs = []
+            st.session_state.outro_run_error = None
+            st.rerun()
 
     outro_category = st.selectbox("Loại outro của tôi", list(OUTRO_CATEGORY_SLUGS.keys()),
                                    key="outro_category_choice")
@@ -713,13 +675,9 @@ def render_outro_swap():
 
     chosen_outro_path = None
     if not available_outros:
-        st.caption(
-            f"Chưa có outro nào cho '{outro_category}' (mở mục 'Quản lý outro của tôi' ở trên để "
-            "thêm, nếu muốn gắn outro riêng vào cuối). Không chọn cũng được — tool vẫn cắt outro "
-            "đối thủ như bình thường, chỉ là không gắn thêm gì vào cuối."
-        )
+        st.caption(f"Chưa có outro cho '{outro_category}' — không chọn cũng được, vẫn cắt outro đối thủ bình thường.")
     else:
-        st.write(f"Tích chọn outro muốn dùng cho '{outro_category}' (tích cái khác sẽ tự bỏ tích cái cũ):")
+        st.write("Chọn outro muốn dùng:")
         all_names = [f.name for f in available_outros]
         selected_name = next(
             (n for n in all_names if st.session_state.get(f"outro_tick_{outro_category}_{n}")), None,
@@ -741,41 +699,29 @@ def render_outro_swap():
                     picked.append(f)
 
         if len(picked) == 0:
-            st.caption(
-                "Chưa tích chọn outro nào — không sao, tool vẫn cắt outro đối thủ như "
-                "bình thường, chỉ là sẽ không gắn thêm outro nào vào cuối."
-            )
+            st.caption("Chưa chọn outro — vẫn cắt outro đối thủ bình thường, chỉ không gắn gì vào cuối.")
         else:
             chosen_outro_path = picked[0]
 
-    with st.expander("Tuỳ chọn nâng cao (không cần đụng vào nếu không rõ)"):
+    with st.expander("Tuỳ chọn nâng cao"):
         match_threshold = st.number_input(
-            "Ngưỡng nhận outro chung giữa các video (thấp = khắt khe hơn, ít nhận "
-            "nhầm nhưng dễ bỏ sót)",
+            "Ngưỡng nhận outro chung (thấp = khắt khe hơn)",
             min_value=1, max_value=100, value=outro_core.DEFAULT_MATCH_THRESHOLD, step=1,
         )
         max_workers = st.number_input(
-            "Số video xử lý song song cùng lúc (CHỈ tăng lên nếu tự chạy trên "
-            "server riêng nhiều lõi CPU/RAM — máy chủ miễn phí RAM rất hạn chế, "
-            "để cao dễ bị crash/treo cả app giữa chừng)",
+            "Số video xử lý song song (chỉ tăng nếu chạy server riêng — máy chủ "
+            "miễn phí dễ crash nếu để cao)",
             min_value=1, max_value=16, value=1, step=1, key="outro_max_workers",
         )
         safety_margin = st.number_input(
-            "Cắt dư thêm vào nội dung (giây) — để chắc chắn không sót outro",
+            "Cắt dư thêm vào nội dung (giây) — chắc chắn không sót outro",
             min_value=0.0, max_value=2.0, value=0.15, step=0.05, key="outro_safety_margin",
-            help=(
-                "Việc dò ranh giới outro không phải lúc nào cũng chính xác 100% "
-                "(vd outro có chuyển động/hiệu ứng phức tạp). Cắt dư thêm 1 chút "
-                "vào nội dung thật (thường không ai nhận ra trên vài chục giây "
-                "video) để đảm bảo không còn sót khung outro nào ở cuối video. "
-                "Chỉ áp dụng cho video ĐÃ xác định được outro — không ảnh hưởng "
-                "video không khớp được (không cắt gì)."
-            ),
+            help="Tăng lên nếu vẫn thấy sót outro ở cuối video.",
         )
         strip_audio = st.checkbox("Bỏ âm thanh trong video kết quả", key="outro_strip_audio")
 
-    with st.expander("🏷️ Thêm trademark bay ziczac vào video kết quả (tuỳ chọn)"):
-        add_trademark = st.checkbox("Gắn trademark của tôi vào video kết quả", key="outro_add_trademark")
+    with st.expander("🏷️ Thêm trademark bay (tuỳ chọn)"):
+        add_trademark = st.checkbox("Gắn trademark vào video kết quả", key="outro_add_trademark")
         trademark_kind = trademark_text = None
         trademark_logo_file = None
         trademark_opacity = trademark_size = trademark_speed = trademark_range = None
@@ -813,34 +759,19 @@ def render_outro_swap():
                 )
                 trademark_speed = st.slider(
                     "Tốc độ bay", 30, 400, 150, key="outro_trademark_speed",
-                    help="Số nhỏ = bay chậm, số lớn = bay nhanh.",
                 )
                 trademark_path_style = st.selectbox(
                     "Kiểu bay", trademark_core.PATH_STYLES, key="outro_trademark_path_style",
-                    help=(
-                        "Zigzag: nảy khắp khung hình kiểu logo DVD. "
-                        "Vòng tròn: bay theo hình ELIP quanh tâm video (tự xoay "
-                        "mặt hướng vào tâm khi bay), tốc độ tự dao động nhanh/"
-                        "chậm liên tục kiểu tàu lượn siêu tốc."
-                    ),
+                    help="Zigzag: nảy khắp khung hình. Vòng tròn: bay theo elip, tốc độ đổi nhanh/chậm.",
                 )
                 trademark_range = st.slider(
                     "Phạm vi bay (% vùng khả dụng)", 20, 100, 100, key="outro_trademark_range",
-                    help=(
-                        "Trademark được bay quanh trong 1 vùng lớn bằng bao "
-                        "nhiêu % khung hình, luôn tính từ CHÍNH GIỮA video. "
-                        "100% = bay sát hết phạm vi có thể, nhỏ hơn = thu hẹp "
-                        "lại gần giữa hơn."
-                    ),
+                    help="100% = bay sát hết phạm vi, nhỏ hơn = thu hẹp lại gần giữa.",
                 )
-                st.caption(
-                    "⚠️ Đường bay đi KHẮP khung hình (theo yêu cầu), nên có lúc sẽ đi "
-                    "qua vùng giữa (thường là chủ thể chính) — không có cách tự nhận "
-                    "diện nội dung để tránh 100%. Giảm độ mờ/độ lớn nếu muốn hạn chế che."
-                )
+                st.caption("⚠️ Đường bay đi khắp khung hình, có thể đi qua chủ thể chính.")
 
             with preview_col:
-                st.caption("👁️ Xem trước nhanh (mô phỏng, không phải video thật):")
+                st.caption("👁️ Xem trước nhanh:")
                 preview_overlay = None
                 if trademark_kind == "Chữ" and trademark_text and trademark_text.strip():
                     preview_overlay = trademark_core.render_text_overlay(
@@ -855,9 +786,9 @@ def render_outro_swap():
                     preview_overlay = trademark_core.load_logo_overlay(tmp_logo)
 
                 if preview_overlay is None:
-                    st.info("Nhập chữ hoặc tải logo ở bên trái để xem trước.")
+                    st.info("Nhập chữ hoặc tải logo để xem trước.")
                 elif not has_files:
-                    st.info("Tải video đối thủ lên (ở trên) để xem trước trên khung hình thật.")
+                    st.info("Tải video lên để xem trước.")
                 else:
                     first_file = uploaded_files[0]
                     sample_frame = _sample_frame_from_upload(
@@ -890,7 +821,7 @@ def render_outro_swap():
         "Đặt tên file xuất ra (tuỳ chọn)",
         placeholder="vd: hieund.apero → hieund.apero.1, hieund.apero.2, ...",
         key="outro_output_name",
-        help="Để trống thì dùng tên tự động (outro_swap_01, outro_swap_02, ...).",
+        help="Để trống thì dùng tên tự động.",
     )
 
     run_clicked = st.button("Xử lý", type="primary", disabled=not has_files)
@@ -904,27 +835,17 @@ def render_outro_swap():
             with st.status("Đang xử lý video...", expanded=True) as status:
                 made = []
 
-                own_outro_note = " gắn outro của bạn vào cuối." if chosen_outro_path else " không gắn thêm gì (chưa chọn outro)."
-
                 def on_source(done, total, name, result):
                     if result["reason"] == "matched":
-                        status.write(
-                            f"[{done}/{total}] ✓ {name}: nhận diện chắc chắn — đã cắt "
-                            f"{result['outro_cut_seconds']:.1f}s outro đối thủ," + own_outro_note
-                        )
+                        status.write(f"[{done}/{total}] ✓ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro")
                     else:
                         tail = (
-                            "nhưng **outro của bạn vẫn được gắn vào cuối** — video này có thể "
-                            "có 2 outro nối tiếp nhau (outro cũ của đối thủ nếu có, rồi tới outro "
-                            "của bạn), nên xem lại riêng video này."
-                            if chosen_outro_path else
-                            "nên giữ nguyên toàn bộ, không gắn thêm gì (chưa chọn outro)."
+                            "video này có thể có 2 outro nối tiếp — kiểm tra lại."
+                            if chosen_outro_path else "giữ nguyên, không gắn gì thêm."
                         )
                         status.write(
-                            f"[{done}/{total}] ⚠️ {name}: không tìm được video nào "
-                            "khác cùng outro trong mẻ này (có thể do nó không có "
-                            "outro, hoặc là app duy nhất/lẻ trong mẻ tải lên) — "
-                            "KHÔNG dám cắt liều để tránh mất nội dung thật, " + tail
+                            f"[{done}/{total}] ⚠️ {name}: không tìm được video nào cùng "
+                            "outro trong mẻ này, không dám cắt liều — " + tail
                         )
                     made.append(result)
 
@@ -1038,16 +959,8 @@ def render_logo_cover():
         )
         return
 
-    st.caption(
-        "Khoanh vùng logo/chữ thương hiệu đối thủ ở 1 khung hình — tool tự "
-        "bám theo (object tracking) và vẽ đè logo của bạn lên đúng vị trí."
-    )
-    st.info(
-        "⚠️ Giới hạn: tool chỉ bám theo trong phạm vi **1 cảnh liên tục** — "
-        "nếu video cắt sang cảnh khác, cần khoanh vùng lại riêng cho cảnh "
-        "đó (chạy tool thêm lần nữa). Đây là đánh đổi để đảm bảo không che "
-        "sai chỗ, thay vì cố tự động hoàn toàn (đã thử, không chính xác)."
-    )
+    st.caption("Khoanh vùng logo đối thủ ở 1 khung hình — tool tự bám theo và vẽ đè logo của bạn lên.")
+    st.info("⚠️ Chỉ bám theo trong 1 cảnh liên tục — cắt cảnh khác cần khoanh vùng lại riêng.")
 
     for key, default in [("cover_result", None), ("cover_error", None)]:
         if key not in st.session_state:
@@ -1058,7 +971,7 @@ def render_logo_cover():
         accept_multiple_files=False, key="cover_uploader",
     )
     logo_file = st.file_uploader(
-        "Logo/trademark của bạn (khuyến khích ảnh PNG nền trong suốt để che đẹp hơn)",
+        "Logo/trademark của bạn (nên dùng PNG nền trong suốt)",
         type=["png", "jpg", "jpeg"], key="cover_logo_uploader",
     )
 
@@ -1090,14 +1003,14 @@ def render_logo_cover():
         return
     pil_img = Image.fromarray(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
 
-    st.write("Kéo/chỉnh khung đỏ bên dưới cho vừa khít logo/chữ cần che:")
+    st.write("Kéo khung đỏ cho vừa khít logo cần che:")
     box = st_cropper(
         pil_img, return_type="box", box_color="#FF0000",
         key=f"cropper_{sig[0]}_{sig[1]}",
     )
     bbox = (int(box["left"]), int(box["top"]), int(box["width"]), int(box["height"]))
 
-    with st.expander("Tuỳ chọn nâng cao (không cần đụng vào nếu không rõ)"):
+    with st.expander("Tuỳ chọn nâng cao"):
         detector = st.selectbox(
             "Cách nhận diện điểm cắt cảnh", ["content", "adaptive"], key="cover_detector",
         )
@@ -1114,8 +1027,7 @@ def render_logo_cover():
             key="cover_tracker",
         )
         cover_scale = st.slider(
-            "Độ phóng to logo che (đảm bảo che kín hoàn toàn, không hở viền)",
-            min_value=1.0, max_value=2.0, value=1.15, step=0.05, key="cover_scale",
+            "Độ phóng to logo che", min_value=1.0, max_value=2.0, value=1.15, step=0.05, key="cover_scale",
         )
 
     output_name = st.text_input(
