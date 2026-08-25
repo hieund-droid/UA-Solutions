@@ -224,16 +224,16 @@ def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, work
 
 def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
                         tail_match_threshold=DEFAULT_MATCH_THRESHOLD, on_source=None,
-                        max_workers=4):
+                        max_workers=1):
     """Với mỗi video trong `paths`: cắt outro đối thủ (nếu xác định được),
     gắn `own_outro_path` vào cuối — GIỮ NGUYÊN nội dung gốc, không xáo trộn,
     không ghép với video khác. Mỗi video đầu vào cho ra đúng 1 video kết quả.
 
-    Xử lý SONG SONG tối đa `max_workers` video cùng lúc (mặc định 4) — quan
-    trọng khi tải lên số lượng lớn video (vd hàng chục/hàng trăm), việc cắt
-    + ghép từng video (chạy ffmpeg) độc lập với nhau nên tận dụng được nhiều
-    lõi CPU cùng lúc thay vì làm tuần tự từng cái. Máy chỉ có 1 lõi CPU vẫn
-    chạy đúng, chỉ là không nhanh hơn.
+    Có thể xử lý SONG SONG tối đa `max_workers` video cùng lúc để tận dụng
+    nhiều lõi CPU — nhưng MẶC ĐỊNH LÀ 1 (tuần tự, an toàn) vì mỗi video chạy
+    song song là 1 tiến trình ffmpeg riêng, tốn thêm RAM đáng kể; máy chủ
+    miễn phí (RAM rất hạn chế) đã từng bị crash giữa chừng khi để giá trị
+    này cao — chỉ tăng lên khi chắc chắn đang chạy trên server đủ mạnh.
 
     on_source(done_count, total, name, result) được gọi mỗi khi 1 video xử
     lý xong (theo thứ tự HOÀN THÀNH, không nhất thiết theo thứ tự tải lên,

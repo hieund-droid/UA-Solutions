@@ -698,10 +698,10 @@ def render_outro_swap():
             min_value=1, max_value=100, value=outro_core.DEFAULT_MATCH_THRESHOLD, step=1,
         )
         max_workers = st.number_input(
-            "Số video xử lý song song cùng lúc (tăng lên nếu máy chủ nhiều lõi CPU "
-            "để xử lý nhanh hơn khi tải lên nhiều video; giảm xuống nếu bị treo/lỗi "
-            "do quá tải)",
-            min_value=1, max_value=16, value=4, step=1, key="outro_max_workers",
+            "Số video xử lý song song cùng lúc (CHỈ tăng lên nếu tự chạy trên "
+            "server riêng nhiều lõi CPU/RAM — máy chủ miễn phí RAM rất hạn chế, "
+            "để cao dễ bị crash/treo cả app giữa chừng)",
+            min_value=1, max_value=16, value=1, step=1, key="outro_max_workers",
         )
         strip_audio = st.checkbox("Bỏ âm thanh trong video kết quả", key="outro_strip_audio")
 
