@@ -713,7 +713,11 @@ def render_outro_swap():
 
     chosen_outro_path = None
     if not available_outros:
-        st.warning(f"Chưa có outro nào cho '{outro_category}' — mở mục 'Quản lý outro của tôi' ở trên để thêm.")
+        st.caption(
+            f"Chưa có outro nào cho '{outro_category}' (mở mục 'Quản lý outro của tôi' ở trên để "
+            "thêm, nếu muốn gắn outro riêng vào cuối). Không chọn cũng được — tool vẫn cắt outro "
+            "đối thủ như bình thường, chỉ là không gắn thêm gì vào cuối."
+        )
     else:
         st.write(f"Tích chọn outro muốn dùng cho '{outro_category}' (tích cái khác sẽ tự bỏ tích cái cũ):")
         all_names = [f.name for f in available_outros]
@@ -737,11 +741,12 @@ def render_outro_swap():
                     picked.append(f)
 
         if len(picked) == 0:
-            st.warning("Chưa tích chọn outro nào.")
+            st.caption(
+                "Chưa tích chọn outro nào — không sao, tool vẫn cắt outro đối thủ như "
+                "bình thường, chỉ là sẽ không gắn thêm outro nào vào cuối."
+            )
         else:
             chosen_outro_path = picked[0]
-
-    outro_ready = chosen_outro_path is not None
 
     with st.expander("Tuỳ chọn nâng cao (không cần đụng vào nếu không rõ)"):
         match_threshold = st.number_input(
@@ -865,9 +870,9 @@ def render_outro_swap():
         help="Để trống thì dùng tên tự động (outro_swap_01, outro_swap_02, ...).",
     )
 
-    run_clicked = st.button("Xử lý", type="primary", disabled=not (has_files and outro_ready))
+    run_clicked = st.button("Xử lý", type="primary", disabled=not has_files)
 
-    if run_clicked and has_files and outro_ready:
+    if run_clicked and has_files:
         st.session_state.outro_outputs = []
         st.session_state.outro_run_error = None
         workdir, input_paths = save_uploads(uploaded_files, prefix="outro_swap_")
@@ -876,22 +881,27 @@ def render_outro_swap():
             with st.status("Đang xử lý video...", expanded=True) as status:
                 made = []
 
+                own_outro_note = " gắn outro của bạn vào cuối." if chosen_outro_path else " không gắn thêm gì (chưa chọn outro)."
+
                 def on_source(done, total, name, result):
                     if result["reason"] == "matched":
                         status.write(
                             f"[{done}/{total}] ✓ {name}: nhận diện chắc chắn — đã cắt "
-                            f"{result['outro_cut_seconds']:.1f}s outro đối thủ, gắn "
-                            "outro của bạn vào cuối."
+                            f"{result['outro_cut_seconds']:.1f}s outro đối thủ," + own_outro_note
                         )
                     else:
+                        tail = (
+                            "nhưng **outro của bạn vẫn được gắn vào cuối** — video này có thể "
+                            "có 2 outro nối tiếp nhau (outro cũ của đối thủ nếu có, rồi tới outro "
+                            "của bạn), nên xem lại riêng video này."
+                            if chosen_outro_path else
+                            "nên giữ nguyên toàn bộ, không gắn thêm gì (chưa chọn outro)."
+                        )
                         status.write(
                             f"[{done}/{total}] ⚠️ {name}: không tìm được video nào "
                             "khác cùng outro trong mẻ này (có thể do nó không có "
                             "outro, hoặc là app duy nhất/lẻ trong mẻ tải lên) — "
-                            "KHÔNG dám cắt liều để tránh mất nội dung thật, nhưng "
-                            "**outro của bạn vẫn được gắn vào cuối** — video này có "
-                            "thể có 2 outro nối tiếp nhau (outro cũ của đối thủ nếu "
-                            "có, rồi tới outro của bạn), nên xem lại riêng video này."
+                            "KHÔNG dám cắt liều để tránh mất nội dung thật, " + tail
                         )
                     made.append(result)
 
@@ -921,10 +931,12 @@ def render_outro_swap():
                         overlay_rgba = trademark_core.load_logo_overlay(logo_path)
 
                     # Không cho trademark bay đè lên đoạn outro của bạn ở
-                    # cuối video kết quả — chỉ gắn trong phần nội dung phía
-                    # trước. own_outro_dur giống nhau cho mọi video (cùng 1
-                    # file outro được chọn), nên chỉ cần tính 1 lần.
-                    own_outro_dur = core.ffprobe_info(chosen_outro_path)["duration"]
+                    # cuối video kết quả (nếu có chọn outro) — chỉ gắn
+                    # trong phần nội dung phía trước. own_outro_dur giống
+                    # nhau cho mọi video (cùng 1 file outro được chọn), nên
+                    # chỉ cần tính 1 lần. Bằng 0 nếu không chọn outro nào
+                    # (không có đoạn nào cần tránh).
+                    own_outro_dur = core.ffprobe_info(chosen_outro_path)["duration"] if chosen_outro_path else 0.0
                     for r in made:
                         final_dur = core.ffprobe_info(r["path"])["duration"]
                         skip_after = max(final_dur - own_outro_dur, 0.0)

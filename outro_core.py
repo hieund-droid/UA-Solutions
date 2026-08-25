@@ -245,35 +245,43 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD):
 
 
 def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, workdir, strip_audio):
-    """Xử lý 1 video: cắt outro (nếu xác định được) + gắn outro của mình.
-    Tách riêng thành hàm để chạy song song nhiều video cùng lúc (xem
-    process_outro_swap) — mỗi video dùng tên file riêng biệt (theo `i`) nên
-    chạy đồng thời không đụng nhau."""
+    """Xử lý 1 video: cắt outro (nếu xác định được) + gắn outro của mình
+    (NẾU có chọn — `own_outro_path`/`own_info` có thể là None, khi đó chỉ
+    cắt outro đối thủ, không gắn gì thêm vào cuối). Tách riêng thành hàm để
+    chạy song song nhiều video cùng lúc (xem process_outro_swap) — mỗi
+    video dùng tên file riêng biệt (theo `i`) nên chạy đồng thời không
+    đụng nhau."""
     info = ffprobe_info(p)
-    # Không cần đồng nhất kích thước với các video khác (không ghép chéo
-    # nội dung giữa các video như remix_core.py) — nhưng PHẢI chọn khung
-    # hình chuẩn theo bên nào có ĐỘ PHÂN GIẢI CAO HƠN giữa video nguồn và
-    # outro của bạn. Nếu luôn lấy theo video nguồn (thường thấp hơn, vì là
-    # file tải về từ đối thủ) thì outro chất lượng cao của bạn sẽ bị co nhỏ
-    # xuống theo, gây mờ — đã gặp lỗi này trên thực tế.
-    target_spec = _pick_larger_spec(info, own_info)
-    want_audio = (not strip_audio) and (info["has_audio"] or own_info["has_audio"])
+    if own_info is not None:
+        # Không cần đồng nhất kích thước với các video khác (không ghép
+        # chéo nội dung giữa các video như remix_core.py) — nhưng PHẢI
+        # chọn khung hình chuẩn theo bên nào có ĐỘ PHÂN GIẢI CAO HƠN giữa
+        # video nguồn và outro của bạn. Nếu luôn lấy theo video nguồn
+        # (thường thấp hơn, vì là file tải về từ đối thủ) thì outro chất
+        # lượng cao của bạn sẽ bị co nhỏ xuống theo, gây mờ — đã gặp lỗi
+        # này trên thực tế.
+        target_spec = _pick_larger_spec(info, own_info)
+        want_audio = (not strip_audio) and (info["has_audio"] or own_info["has_audio"])
+    else:
+        target_spec = {"width": info["width"] or 1280, "height": info["height"] or 720, "fps": info["fps"] or 30}
+        want_audio = (not strip_audio) and info["has_audio"]
 
     content_end = boundary["outro_start"] if boundary["outro_start"] is not None else info["duration"]
-    content_clips = split_clips(
+    all_clips = split_clips(
         p, [(0.0, content_end)], clips_dir, info["has_audio"], want_audio, 0.0,
         target_spec, name_prefix=f"content{i:02d}",
     )
-    outro_clips = split_clips(
-        own_outro_path, [(0.0, own_info["duration"])], clips_dir, own_info["has_audio"],
-        want_audio, 0.0, target_spec, name_prefix=f"ownoutro{i:02d}",
-    )
+    if own_outro_path is not None:
+        all_clips += split_clips(
+            own_outro_path, [(0.0, own_info["duration"])], clips_dir, own_info["has_audio"],
+            want_audio, 0.0, target_spec, name_prefix=f"ownoutro{i:02d}",
+        )
 
     out_path = workdir / f"outro_swap_{i + 1:02d}.mp4"
-    concat_clips(content_clips + outro_clips, out_path, workdir)
+    concat_clips(all_clips, out_path, workdir)
 
     cut_seconds = (info["duration"] - content_end) if boundary["outro_start"] is not None else 0.0
-    for c in content_clips + outro_clips:
+    for c in all_clips:
         c.unlink(missing_ok=True)
 
     return {"path": out_path, "outro_cut_seconds": cut_seconds, "reason": boundary["reason"]}
@@ -283,8 +291,13 @@ def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
                         tail_match_threshold=DEFAULT_MATCH_THRESHOLD, on_source=None,
                         max_workers=1):
     """Với mỗi video trong `paths`: cắt outro đối thủ (nếu xác định được),
-    gắn `own_outro_path` vào cuối — GIỮ NGUYÊN nội dung gốc, không xáo trộn,
-    không ghép với video khác. Mỗi video đầu vào cho ra đúng 1 video kết quả.
+    rồi gắn `own_outro_path` vào cuối — GIỮ NGUYÊN nội dung gốc, không xáo
+    trộn, không ghép với video khác. Mỗi video đầu vào cho ra đúng 1 video
+    kết quả.
+
+    `own_outro_path` có thể là None — khi đó CHỈ cắt outro đối thủ (nếu xác
+    định được), KHÔNG gắn thêm gì vào cuối. Dùng cho người chỉ cần bỏ outro
+    đối thủ đi (vd để tự gắn trademark riêng, hoặc không cần outro nào cả).
 
     Có thể xử lý SONG SONG tối đa `max_workers` video cùng lúc để tận dụng
     nhiều lõi CPU — nhưng MẶC ĐỊNH LÀ 1 (tuần tự, an toàn) vì mỗi video chạy
@@ -305,7 +318,7 @@ def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
     clips_dir.mkdir(parents=True, exist_ok=True)
 
     boundaries = find_outro_boundaries(paths, tail_match_threshold)
-    own_info = ffprobe_info(own_outro_path)
+    own_info = ffprobe_info(own_outro_path) if own_outro_path is not None else None
 
     made = [None] * len(paths)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
