@@ -55,19 +55,36 @@ from remix_core import concat_clips, ffprobe_info, split_clips
 # bộ việc nhận diện), outro app B dài ~3-4 giây. Dò đủ nhiều mốc để bắt được
 # cả 2 trường hợp mà không cần biết trước outro app nào dài bao nhiêu.
 #
-# Các mốc đầu (0.04 - 0.36) RẤT SÁT cuối video, cách nhau CHỈ 1 KHUNG HÌNH
-# (ở fps phổ biến 24-30) — bắt được cả outro CỰC NGẮN, kiểu "thẻ logo" chỉ
-# hiện 2-3 khung hình rồi file kết thúc luôn (đã gặp thật: app Vividix,
-# outro chỉ ~0.12 giây = đúng 3 khung hình ở 25fps). Phải dò DÀY từng khung
-# một ở vùng này — nếu dò cách khung (vd 0.08 rồi nhảy thẳng 0.16) rất dễ
-# "nhảy qua" lọt cả đoạn outro ngắn cỡ này, khiến chỉ bắt được ĐÚNG 1 mốc
-# (không đủ 2 mốc liền kề theo yêu cầu chống nhận nhầm ở _best_matching_offset
-# bên dưới) dù outro đó hoàn toàn có thật (đã kiểm chứng bằng video mẫu
-# thật: 3 khung cuối khớp gần như tuyệt đối giữa 2 video, khung thứ 4 trở đi
-# khác hẳn). Trước đây không dò được vùng sát mép cuối này vì tua (seek)
-# ngẫu nhiên gần cuối file thường không ổn định — giờ đọc TUẦN TỰ (xem
-# _read_tail_hashes) nên dò sát cuối vẫn chính xác.
-CANDIDATE_PROBE_OFFSETS = [0.04, 0.08, 0.12, 0.16, 0.2, 0.28, 0.36, 0.5, 1.0, 1.5, 2.5, 4.0]
+# Các mốc XA (từ 0.5s trở đi) — cố định theo giây, không cần chính xác tới
+# từng khung hình vì ở khoảng cách này sai số nửa khung hình là không đáng
+# kể so với thời lượng đang xét.
+FAR_PROBE_OFFSETS = [0.5, 1.0, 1.5, 2.5, 4.0]
+# Số khung hình ĐẦU (gần cuối video nhất) cần dò riêng theo ĐÚNG fps thực
+# tế của từng video — xem _probe_offsets() ngay dưới để biết vì sao KHÔNG
+# thể dùng số giây cố định (vd 0.04, 0.08...) cho phần này.
+NEAR_TAIL_FRAME_COUNT = 9
+
+
+def _probe_offsets(fps):
+    """Danh sách mốc (giây) để dò, phần GẦN CUỐI (9 khung hình đầu) tính
+    THEO ĐÚNG FPS THẬT của video đang xét — bắt được cả outro CỰC NGẮN,
+    kiểu "thẻ logo" chỉ hiện 2-3 khung hình rồi file kết thúc luôn (đã gặp
+    thật: app Vividix, outro chỉ ~0.1 giây). Phải dò DÀY từng khung hình một
+    ở vùng này — nếu dò cách khung rất dễ "nhảy qua" lọt cả đoạn outro ngắn
+    cỡ này (không đủ mốc liền kề theo yêu cầu chống nhận nhầm ở
+    _best_matching_offset bên dưới) dù outro đó hoàn toàn có thật.
+
+    QUAN TRỌNG: phải tính theo fps THẬT (1/fps, 2/fps, ...) chứ KHÔNG được
+    dùng số giây cố định như 0.04/0.08 — đã gặp thật: video quay ở 30fps
+    (khung hình cách nhau 0.0333s), mốc cố định 0.04s không rơi đúng vào
+    khung hình nào cả, mỗi lần làm tròn về khung gần nhất lại lệch một chút
+    khác nhau tuỳ điểm, đủ để phá vỡ toàn bộ chuỗi khớp liên tiếp (dò được
+    với video 25fps nhưng lại trượt hoàn toàn với video 30fps cùng 1 outro).
+    Dùng đúng bội số của 1/fps đảm bảo luôn trúng CHÍNH XÁC khung hình,
+    không phụ thuộc video quay ở tốc độ khung hình nào."""
+    frame = 1.0 / fps
+    near = [round(frame * k, 5) for k in range(1, NEAR_TAIL_FRAME_COUNT + 1)]
+    return near + FAR_PROBE_OFFSETS
 # Không dò lùi quá xa mốc này — outro thực tế không dài tới mức này, nếu
 # dò xa hơn mà vẫn khớp thì dừng lại để tránh nuốt nhầm nội dung thật. Cũng
 # chính là khoảng thời gian đọc TUẦN TỰ từ cuối video (xem _read_tail_hashes).
@@ -184,12 +201,8 @@ MIN_MATCHING_OFFSETS = 2
 # ra cùng 1 outro. Thử dịch chuyển thời gian (cả 2 chiều) để tìm lại đúng
 # điểm 2 video "cùng nhìn vào 1 chỗ" trong outro.
 #
-# PHẢI dò dày tới TỪNG KHUNG HÌNH (0.04s, không phải bước thô như 0.2s) —
-# đã kiểm chứng thực tế: điểm khớp đúng có thể chỉ "trúng" ở ĐÚNG 1 độ lệch
-# duy nhất (vd 0.84s), lệch 1-2 khung hình sang bên (0.80s hay 0.88s) là mất
-# hẳn, giống hệt lý do phải dò dày ở CANDIDATE_PROBE_OFFSETS phía trên.
-SHIFT_CANDIDATES = [round(0.04 * k, 2) for k in range(1, 201)]  # 0.04s -> 8.0s
-SHIFT_CANDIDATES += [-s for s in SHIFT_CANDIDATES]
+# Phạm vi dò độ lệch (giây) — không dịch xa hơn mốc này.
+MAX_SHIFT_SECONDS = 8.0
 # Thử NHIỀU độ lệch làm tăng rủi ro trùng hợp ngẫu nhiên (mỗi độ lệch là 1
 # lượt "thử vận may" riêng) — đòi hỏi số mốc liền kề khớp NHIỀU HƠN mức
 # thường (MIN_MATCHING_OFFSETS) để bù lại, chỉ chấp nhận bằng chứng chắc
@@ -197,15 +210,28 @@ SHIFT_CANDIDATES += [-s for s in SHIFT_CANDIDATES]
 SHIFT_MIN_MATCHING_OFFSETS = MIN_MATCHING_OFFSETS + 1
 
 
+def _shift_candidates(fps):
+    """Danh sách độ lệch (giây) thử khi 2 video KHÔNG khớp được ở độ lệch =
+    0 — PHẢI tính theo ĐÚNG bội số của 1/fps (lý do giống hệt _probe_offsets
+    ở trên: dùng bước cố định như 0.04s dễ "trật khung hình" với video quay
+    ở fps khác 25 — đã gặp thật, video 30fps chỉ khớp đúng ở độ lệch
+    0.0333s/1 khung hình, thử 0.04s do làm tròn khác đi là trượt mất)."""
+    frame = 1.0 / fps
+    n = int(MAX_SHIFT_SECONDS / frame)
+    positive = [round(frame * k, 5) for k in range(1, n + 1)]
+    return positive + [-s for s in positive]
+
+
 def _matching_run(tail_a, tail_b, threshold, shift):
-    """Tìm đoạn (run) DÀI NHẤT các mốc LIỀN KỀ nhau (trong thứ tự
-    CANDIDATE_PROBE_OFFSETS) mà `tail_a` khớp với `tail_b` đã dịch đi
-    `shift` giây — tại mỗi mốc `off`, so khung hình tail_a[off] với khung
+    """Tìm đoạn (run) DÀI NHẤT các mốc LIỀN KỀ nhau (theo _probe_offsets
+    của `tail_a`) mà `tail_a` khớp với `tail_b` đã dịch đi `shift` giây —
+    tại mỗi mốc `off`, so khung hình tail_a[off] với khung
     hình tail_b[off + shift]. Trả về (run_len, offset_nhỏ_nhất_của_run)
     hoặc (0, None) nếu không có run nào."""
+    offsets = _probe_offsets(tail_a["fps"])
     matched_flags = [
         _match(_tail_hash_at_offset(tail_a, off), _tail_hash_at_offset(tail_b, off + shift), threshold)
-        for off in CANDIDATE_PROBE_OFFSETS
+        for off in offsets
     ]
     best_len, best_start = 0, None
     run_len = 0
@@ -213,7 +239,7 @@ def _matching_run(tail_a, tail_b, threshold, shift):
         run_len = run_len + 1 if is_match else 0
         if run_len > best_len:
             best_len = run_len
-            best_start = CANDIDATE_PROBE_OFFSETS[idx - run_len + 1]
+            best_start = offsets[idx - run_len + 1]
     return best_len, best_start
 
 
@@ -224,7 +250,7 @@ def _best_matching_offset(tail_a, tail_b, threshold):
 
     Ưu tiên độ lệch = 0 trước (an toàn, đã kiểm chứng kỹ — chỉ cần
     MIN_MATCHING_OFFSETS mốc liền kề khớp là đủ). Chỉ khi độ lệch 0 không ra
-    kết quả mới thử các độ lệch khác (xem SHIFT_CANDIDATES), với yêu cầu
+    kết quả mới thử các độ lệch khác (xem _shift_candidates), với yêu cầu
     khớp CHẶT hơn (SHIFT_MIN_MATCHING_OFFSETS) để bù rủi ro trùng hợp ngẫu
     nhiên tăng lên do phải thử nhiều độ lệch.
 
@@ -237,17 +263,20 @@ def _best_matching_offset(tail_a, tail_b, threshold):
     if run_len >= MIN_MATCHING_OFFSETS:
         return start, 0.0
 
-    # CANDIDATE_PROBE_OFFSETS chỉ dày đặc gần mốc 0 — nếu video A có outro
-    # NGẮN (outro nằm gần mốc 0 của A) còn video B có outro DÀI hơn (outro
-    # nằm xa mốc 0 của B), neo (anchor) theo lưới mốc của A khớp được,
-    # nhưng neo theo lưới mốc (thưa hơn ở xa) của B thì trật — PHẢI thử cả
-    # 2 CHIỀU (neo theo A, và neo theo B) mới chắc chắn không bỏ sót.
+    # Mốc dò chỉ dày đặc/chính xác khung hình GẦN 0 CỦA CHÍNH VIDEO ĐANG LÀM
+    # GỐC (_probe_offsets(tail["fps"])) — nếu video A có outro NGẮN (outro
+    # nằm gần mốc 0 của A) còn video B có outro DÀI hơn (outro nằm xa mốc 0
+    # của B), neo (anchor) theo lưới mốc của A khớp được, nhưng neo theo
+    # lưới mốc (thưa/lệch khung hơn ở xa) của B thì trật — PHẢI thử cả 2
+    # CHIỀU (lấy A làm gốc, và lấy B làm gốc) mới chắc chắn không bỏ sót,
+    # đồng thời mỗi chiều dùng đúng fps của video làm gốc để không lệch
+    # khung hình (xem _shift_candidates).
     best = None  # (run_len, offset_theo_A, shift)
-    for shift in SHIFT_CANDIDATES:
+    for shift in _shift_candidates(tail_a["fps"]):
         run_len, start = _matching_run(tail_a, tail_b, threshold, shift)
         if run_len >= SHIFT_MIN_MATCHING_OFFSETS and (best is None or run_len > best[0]):
             best = (run_len, start, shift)
-    for shift in SHIFT_CANDIDATES:
+    for shift in _shift_candidates(tail_b["fps"]):
         run_len, start_b = _matching_run(tail_b, tail_a, threshold, shift)
         if run_len >= SHIFT_MIN_MATCHING_OFFSETS and (best is None or run_len > best[0]):
             # start_b la moc cua B (B[start_b] khop A[start_b+shift]) -> quy
@@ -297,7 +326,7 @@ def _find_boundary_by_time(tail, other_tail, threshold, start_offset, shift=0.0)
 def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD):
     """Xác định mốc thời gian bắt đầu outro đối thủ cho mỗi video, bằng cách
     so khớp hình ảnh CHÉO giữa các video trong cùng danh sách `paths`ở NHIỀU
-    mốc thời gian khác nhau (xem CANDIDATE_PROBE_OFFSETS — outro thực tế dài
+    mốc thời gian khác nhau (xem _probe_offsets — outro thực tế dài
     rất khác nhau tuỳ app, từ ~1 giây tới vài giây). Tự gom nhóm theo độ
     giống nhau — tải lên trộn lẫn nhiều app/đối thủ khác nhau trong 1 lần
     vẫn tự tách đúng thành từng nhóm riêng, không cần tự sắp xếp trước.
@@ -337,30 +366,33 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD):
         if len(g) < 2:
             continue
         for i in g:
-            # Mốc "an toàn" để bắt đầu dò lùi cho video i: mốc nhỏ nhất mà
-            # nó khớp được với BẤT KỲ thành viên khác trong nhóm — PHẢI thử
-            # qua HẾT các thành viên khác, không chỉ 1 video cố định. Nhóm
-            # được gộp theo kiểu "bắt cầu" (A khớp B, B khớp C -> A,B,C cùng
-            # nhóm dù A có thể KHÔNG khớp trực tiếp C) — nếu chỉ so với 1
-            # video cố định trong nhóm, video nào không khớp TRỰC TIẾP với
-            # đúng video đó sẽ bị bỏ qua (không cắt được gì) dù nó vẫn thực
-            # sự chung outro với 1 video khác trong nhóm (bug đã gặp thật,
-            # gây hiện tượng "không cắt" ngẫu nhiên khi tải lên từ 3 video
-            # trở lên). Ưu tiên mốc NHỎ NHẤT (gần cuối video, đáng tin cậy
-            # nhất) trong số tất cả các cặp khớp trực tiếp tìm được.
-            anchor_offset, anchor_shift, anchor_j = None, None, None
+            # Dò ranh giới với TỪNG thành viên khác trong nhóm (không chỉ 1
+            # video cố định — nhóm được gộp theo kiểu "bắt cầu": A khớp B,
+            # B khớp C -> A,B,C cùng nhóm dù A có thể KHÔNG khớp trực tiếp
+            # C), rồi lấy kết quả CẮT ĐƯỢC NHIỀU NHẤT (content_end nhỏ nhất)
+            # trong số đó — không phải kết quả có mốc neo (anchor) gần cuối
+            # nhất. Lý do: 1 video "bạn so sánh" có thể tự nó cũng bị cắt
+            # cụt/thiếu 1 phần outro (đã gặp thật), khiến việc dò lùi dừng
+            # quá sớm dù video đang xét vẫn còn outro thật kéo dài hơn — so
+            # với NHIỀU video khác rồi lấy bằng chứng "đi xa nhất" (nhiều
+            # khung hình khớp liên tiếp nhất) mới đáng tin cậy nhất, tránh
+            # cắt sót do "bạn so sánh" không đủ dữ liệu.
+            best_boundary = None
             for j in g:
                 if j == i:
                     continue
                 res = _best_matching_offset(tails[i], tails[j], threshold)
-                if res is not None and (anchor_offset is None or res[0] < anchor_offset):
-                    anchor_offset, anchor_shift, anchor_j = res[0], res[1], j
-            if anchor_offset is None:
+                if res is None:
+                    continue
+                anchor_offset, anchor_shift = res
+                boundary = _find_boundary_by_time(
+                    tails[i], tails[j], threshold, anchor_offset, anchor_shift,
+                )
+                if best_boundary is None or boundary < best_boundary:
+                    best_boundary = boundary
+            if best_boundary is None:
                 continue
-            boundary = _find_boundary_by_time(
-                tails[i], tails[anchor_j], threshold, anchor_offset, anchor_shift,
-            )
-            results[i] = {"outro_start": boundary, "reason": "matched"}
+            results[i] = {"outro_start": best_boundary, "reason": "matched"}
 
     return results
 
