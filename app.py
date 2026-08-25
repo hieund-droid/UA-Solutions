@@ -187,6 +187,12 @@ def _outro_duration(path_str, mtime):
     return core.ffprobe_info(Path(path_str))["duration"]
 
 
+def _hex_to_rgba(hex_color, alpha=255):
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    return (r, g, b, alpha)
+
+
 @st.cache_data(show_spinner=False)
 def _sample_frame_from_upload(_file_bytes, sig, suffix):
     """Lấy 1 khung hình mẫu từ file upload (để làm nền xem trước trademark)
@@ -756,6 +762,9 @@ def render_outro_swap():
         trademark_kind = trademark_text = None
         trademark_logo_file = None
         trademark_opacity = trademark_size = trademark_speed = None
+        trademark_font_style = "Đậm"
+        trademark_text_color = "#FFFFFF"
+        trademark_stroke_color = "#000000"
         if add_trademark:
             settings_col, preview_col = st.columns([3, 2])
 
@@ -765,6 +774,16 @@ def render_outro_swap():
                 )
                 if trademark_kind == "Chữ":
                     trademark_text = st.text_input("Nội dung chữ", key="outro_trademark_text")
+                    tm_font_col, tm_color1_col, tm_color2_col = st.columns(3)
+                    trademark_font_style = tm_font_col.selectbox(
+                        "Kiểu chữ", trademark_core.FONT_STYLES, key="outro_trademark_font_style",
+                    )
+                    trademark_text_color = tm_color1_col.color_picker(
+                        "Màu chữ", "#FFFFFF", key="outro_trademark_text_color",
+                    )
+                    trademark_stroke_color = tm_color2_col.color_picker(
+                        "Màu viền", "#000000", key="outro_trademark_stroke_color",
+                    )
                 else:
                     trademark_logo_file = st.file_uploader(
                         "Ảnh logo (khuyến khích PNG nền trong suốt)", type=["png", "jpg", "jpeg"],
@@ -788,7 +807,11 @@ def render_outro_swap():
                 st.caption("👁️ Xem trước nhanh (mô phỏng, không phải video thật):")
                 preview_overlay = None
                 if trademark_kind == "Chữ" and trademark_text and trademark_text.strip():
-                    preview_overlay = trademark_core.render_text_overlay(trademark_text.strip())
+                    preview_overlay = trademark_core.render_text_overlay(
+                        trademark_text.strip(), font_style=trademark_font_style,
+                        text_color=_hex_to_rgba(trademark_text_color),
+                        stroke_color=_hex_to_rgba(trademark_stroke_color),
+                    )
                 elif trademark_kind == "Logo/hình ảnh" and trademark_logo_file is not None:
                     tmp_logo_dir = Path(tempfile.mkdtemp(prefix="tm_logo_preview_"))
                     tmp_logo = tmp_logo_dir / f"logo{Path(trademark_logo_file.name).suffix}"
@@ -878,17 +901,29 @@ def render_outro_swap():
                 elif trademark_ready:
                     status.write("Đang gắn trademark bay ziczac lên từng video...")
                     if trademark_kind == "Chữ":
-                        overlay_rgba = trademark_core.render_text_overlay(trademark_text.strip())
+                        overlay_rgba = trademark_core.render_text_overlay(
+                            trademark_text.strip(), font_style=trademark_font_style,
+                            text_color=_hex_to_rgba(trademark_text_color),
+                            stroke_color=_hex_to_rgba(trademark_stroke_color),
+                        )
                     else:
                         logo_path = workdir / f"trademark_logo_{uuid.uuid4().hex[:8]}{Path(trademark_logo_file.name).suffix}"
                         logo_path.write_bytes(trademark_logo_file.getvalue())
                         overlay_rgba = trademark_core.load_logo_overlay(logo_path)
+
+                    # Không cho trademark bay đè lên đoạn outro của bạn ở
+                    # cuối video kết quả — chỉ gắn trong phần nội dung phía
+                    # trước. own_outro_dur giống nhau cho mọi video (cùng 1
+                    # file outro được chọn), nên chỉ cần tính 1 lần.
+                    own_outro_dur = core.ffprobe_info(chosen_outro_path)["duration"]
                     for r in made:
+                        final_dur = core.ffprobe_info(r["path"])["duration"]
+                        skip_after = max(final_dur - own_outro_dur, 0.0)
                         tm_path = r["path"].parent / f"{r['path'].stem}_tm{r['path'].suffix}"
                         trademark_core.apply_trademark(
                             r["path"], overlay_rgba, tm_path, workdir,
                             opacity=trademark_opacity / 100, size_percent=trademark_size,
-                            speed_px_per_sec=trademark_speed,
+                            speed_px_per_sec=trademark_speed, skip_after_seconds=skip_after,
                         )
                         r["path"].unlink(missing_ok=True)
                         r["path"] = tm_path

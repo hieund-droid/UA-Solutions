@@ -28,36 +28,52 @@ Dùng module (import từ app.py):
 """
 
 import io
+import subprocess
 from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from remix_core import ffprobe_info, run
+from remix_core import ffprobe_info
 
-# Font hỗ trợ dấu tiếng Việt — thử theo thứ tự, dùng cái đầu tiên có trên
-# máy đang chạy (Windows dev vs server Linux khác nhau).
-FONT_CANDIDATES = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # server Linux (packages.txt)
-    "C:/Windows/Fonts/segoeuib.ttf",
-    "C:/Windows/Fonts/arialbd.ttf",
-    "C:/Windows/Fonts/tahomabd.ttf",
-]
+# Font hỗ trợ dấu tiếng Việt — mỗi kiểu (đậm/thường) thử theo thứ tự, dùng
+# cái đầu tiên có trên máy đang chạy (Windows dev vs server Linux khác
+# nhau — server Linux dùng DejaVu Sans, luôn có sẵn nhờ khai trong
+# packages.txt, không phụ thuộc gói nào khác kéo theo).
+FONT_CANDIDATES = {
+    "Đậm": [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "C:/Windows/Fonts/segoeuib.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/tahomabd.ttf",
+    ],
+    "Thường": [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/tahoma.ttf",
+    ],
+}
+FONT_STYLES = list(FONT_CANDIDATES.keys())
 
 
-def _load_font(size):
-    for path in FONT_CANDIDATES:
+def _load_font(size, font_style="Đậm"):
+    for path in FONT_CANDIDATES.get(font_style, FONT_CANDIDATES[FONT_STYLES[0]]):
         if Path(path).exists():
             return ImageFont.truetype(path, size)
     return ImageFont.load_default()
 
 
-def render_text_overlay(text, font_size=64, text_color=(255, 255, 255, 255)):
-    """Vẽ `text` ra 1 ảnh RGBA (nền trong suốt), có viền đen mỏng quanh chữ
-    để đọc được trên nền video bất kỳ (sáng hay tối). Trả về numpy array
-    RGBA — kích thước vừa khít chữ."""
-    font = _load_font(font_size)
+def render_text_overlay(text, font_size=64, font_style="Đậm",
+                         text_color=(255, 255, 255, 255), stroke_color=(0, 0, 0, 255)):
+    """Vẽ `text` ra 1 ảnh RGBA (nền trong suốt), có viền quanh chữ (màu
+    `stroke_color`) để đọc được trên nền video bất kỳ (sáng hay tối). Trả
+    về numpy array RGBA — kích thước vừa khít chữ.
+
+    - font_style: 1 trong FONT_STYLES ("Đậm"/"Thường").
+    - text_color / stroke_color: tuple RGBA (0-255)."""
+    font = _load_font(font_size, font_style)
     dummy = Image.new("RGBA", (10, 10))
     bbox = ImageDraw.Draw(dummy).textbbox((0, 0), text, font=font, stroke_width=3)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -66,7 +82,7 @@ def render_text_overlay(text, font_size=64, text_color=(255, 255, 255, 255)):
     draw = ImageDraw.Draw(img)
     draw.text(
         (pad - bbox[0], pad - bbox[1]), text, font=font, fill=text_color,
-        stroke_width=3, stroke_fill=(0, 0, 0, 255),
+        stroke_width=3, stroke_fill=stroke_color,
     )
     return np.array(img)
 
@@ -125,19 +141,23 @@ def _blend_overlay_at(frame_bgr, overlay_rgba, x, y):
 
 
 def apply_trademark(video_path, overlay_rgba, out_path, workdir,
-                     opacity=0.7, size_percent=15, speed_px_per_sec=120):
+                     opacity=0.7, size_percent=15, speed_px_per_sec=120,
+                     skip_after_seconds=None):
     """Gắn `overlay_rgba` (chữ hoặc logo, xem render_text_overlay /
-    load_logo_overlay) lên toàn bộ `video_path`, bay theo đường zigzag,
-    xuất ra `out_path`.
+    load_logo_overlay) lên `video_path`, bay theo đường zigzag, xuất ra
+    `out_path`.
 
     - opacity: 0..1 (độ mờ — 1 = đậm hoàn toàn).
     - size_percent: kích thước trademark tính theo % chiều rộng video.
     - speed_px_per_sec: tốc độ bay (pixel/giây).
+    - skip_after_seconds: nếu có, KHÔNG gắn trademark từ giây này tới hết
+      video — dùng khi video đã có sẵn 1 đoạn outro riêng gắn ở cuối (vd
+      tab "Cắt & Gắn Outro") và không muốn trademark bay đè lên đoạn đó.
 
-    LƯU Ý: đường bay đi khắp khung hình, không tránh vùng giữa (chủ thể
-    chính) — không có cách nhận diện nội dung để tự tránh (xem
-    logo_cover_core.py để biết vì sao việc này không khả thi tự động).
-    Giảm size_percent/opacity để hạn chế mức che nếu cần."""
+    LƯU Ý: trong phạm vi được gắn, đường bay đi khắp khung hình, không
+    tránh vùng giữa (chủ thể chính) — không có cách nhận diện nội dung để
+    tự tránh (xem logo_cover_core.py để biết vì sao việc này không khả thi
+    tự động). Giảm size_percent/opacity để hạn chế mức che nếu cần."""
     workdir = Path(workdir)
     info = ffprobe_info(video_path)
     fps = info["fps"] or 30
@@ -155,29 +175,43 @@ def apply_trademark(video_path, overlay_rgba, out_path, workdir,
     max_x = max(width - overlay_w, 0)
     max_y = max(height - overlay_h, 0)
 
-    silent_path = workdir / f"{Path(out_path).stem}_silent.mp4"
-    writer = cv2.VideoWriter(str(silent_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
-    frame_idx = 0
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        t = frame_idx / fps
-        x, y = _zigzag_position(t, max_x, max_y, speed_px_per_sec)
-        frame = _blend_overlay_at(frame, overlay, x, y)
-        writer.write(frame)
-        frame_idx += 1
-    writer.release()
-    cap.release()
-
-    run([
+    # Ghi thẳng từng khung hình đã xử lý vào ffmpeg qua pipe (stdin) để mã
+    # hoá LUÔN 1 LẦN — trước đây ghi ra file tạm bằng cv2.VideoWriter rồi
+    # ffmpeg đọc lại + mã hoá lần 2 (mã hoá 2 LẦN cho mỗi video, chậm gấp
+    # đôi không cần thiết). Lỗi ffmpeg (nếu có) ghi ra file log riêng thay
+    # vì đọc qua pipe stderr, để tránh nguy cơ tắc nghẽn (deadlock) giữa
+    # lúc vừa ghi stdin vừa đọc stderr.
+    err_log = workdir / f"{Path(out_path).stem}_ffmpeg_err.log"
+    cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
-        "-i", str(silent_path), "-i", str(video_path),
+        "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{width}x{height}", "-r", str(fps),
+        "-i", "-",
+        "-i", str(video_path),
         "-map", "0:v:0", "-map", "1:a:0?",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(out_path),
-    ])
-    silent_path.unlink(missing_ok=True)
+    ]
+    with open(err_log, "wb") as errf:
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=errf)
+        frame_idx = 0
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            t = frame_idx / fps
+            if skip_after_seconds is None or t < skip_after_seconds:
+                x, y = _zigzag_position(t, max_x, max_y, speed_px_per_sec)
+                frame = _blend_overlay_at(frame, overlay, x, y)
+            proc.stdin.write(frame.tobytes())
+            frame_idx += 1
+        cap.release()
+        proc.stdin.close()
+        proc.wait()
+
+    if proc.returncode != 0:
+        err_text = err_log.read_text(errors="replace") if err_log.exists() else ""
+        raise RuntimeError(f"Lệnh ffmpeg thất bại khi gắn trademark:\n{err_text[-2000:]}")
+    err_log.unlink(missing_ok=True)
     return out_path
 
 
