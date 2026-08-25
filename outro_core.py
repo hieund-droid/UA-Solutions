@@ -228,16 +228,27 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD):
     for g in groups:
         if len(g) < 2:
             continue
-        ref_i = next(iter(g))
         for i in g:
             # Mốc "an toàn" để bắt đầu dò lùi cho video i: mốc nhỏ nhất mà
-            # nó khớp được với BẤT KỲ thành viên khác trong nhóm (không chỉ
-            # riêng ref_i — vì có thể ref_i không phải cặp khớp gần nhất).
-            other = ref_i if ref_i != i else next(j for j in g if j != i)
-            anchor_offset = _best_matching_offset(probe_hashes[i], probe_hashes[other], threshold)
+            # nó khớp được với BẤT KỲ thành viên khác trong nhóm — PHẢI thử
+            # qua HẾT các thành viên khác, không chỉ 1 video cố định. Nhóm
+            # được gộp theo kiểu "bắt cầu" (A khớp B, B khớp C -> A,B,C cùng
+            # nhóm dù A có thể KHÔNG khớp trực tiếp C) — nếu chỉ so với 1
+            # video cố định trong nhóm, video nào không khớp TRỰC TIẾP với
+            # đúng video đó sẽ bị bỏ qua (không cắt được gì) dù nó vẫn thực
+            # sự chung outro với 1 video khác trong nhóm (bug đã gặp thật,
+            # gây hiện tượng "không cắt" ngẫu nhiên khi tải lên từ 3 video
+            # trở lên). Ưu tiên mốc NHỎ NHẤT (gần cuối video, đáng tin cậy
+            # nhất) trong số tất cả các cặp khớp trực tiếp tìm được.
+            anchor_offset, ref_hash = None, None
+            for j in g:
+                if j == i:
+                    continue
+                off = _best_matching_offset(probe_hashes[i], probe_hashes[j], threshold)
+                if off is not None and (anchor_offset is None or off < anchor_offset):
+                    anchor_offset, ref_hash = off, probe_hashes[j][off]
             if anchor_offset is None:
                 continue
-            ref_hash = probe_hashes[other][anchor_offset]
             boundary = _find_boundary_by_time(paths[i], ref_hash, threshold, durations[i], anchor_offset)
             results[i] = {"outro_start": boundary, "reason": "matched"}
 

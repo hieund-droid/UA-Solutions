@@ -140,10 +140,16 @@ def _ellipse_topleft_and_rotation(t_seconds, max_x, max_y, speed_px_per_sec, ran
     ry = max(cy * range_scale, 1.0)
     avg_r = (rx + ry) / 2
     base_omega = speed_px_per_sec / avg_r  # rad/giay, uoc luong tu toc do (px/s)
-    wobble_amp = 0.85  # do dao dong toc do quanh muc co ban (khong qua 1 de luon quay cung chieu)
-    wobble_freq = 1.3  # tan so dao dong nhanh/cham — mot vong nhanh/cham hoan chinh
+    wobble_amp = 0.7  # do dao dong toc do quanh muc co ban
+    wobble_freq = 1.2  # tan so dao dong nhanh/cham — mot vong nhanh/cham hoan chinh
     # roi vao khoang vai giay (tuy toc do), du ngan de thay ro trong ca
     # video xem truoc (vai giay) va video thuc te.
+    #
+    # QUAN TRONG: wobble_amp * wobble_freq PHAI < 1 — neu khong, dao ham
+    # cua theta (toc do goc thuc te = base_omega * (1 + wobble_amp *
+    # wobble_freq * cos(...))) co luc am, nghia la co 1 khoang khac ngan
+    # trademark QUAY NGUOC lai roi moi quay tiep — mat nhin thay giong nhu
+    # bi "khung/dung lai mot luc" (bug da gap thuc te voi 0.85*1.3=1.105).
     theta = base_omega * t_seconds + wobble_amp * math.sin(base_omega * wobble_freq * t_seconds)
     x = cx + rx * math.cos(theta)
     y = cy + ry * math.sin(theta)
@@ -322,8 +328,8 @@ def generate_preview_animation(sample_frame_bgr, overlay_rgba, opacity=0.7, size
     256 màu cho từng khung — không phù hợp để cập nhật theo thời gian thực
     mỗi lần kéo thanh trượt)."""
     h, w = sample_frame_bgr.shape[:2]
-    scale = preview_width / w
-    small_frame = cv2.resize(sample_frame_bgr, (preview_width, max(int(h * scale), 1)), interpolation=cv2.INTER_AREA)
+    frame_scale = preview_width / w
+    small_frame = cv2.resize(sample_frame_bgr, (preview_width, max(int(h * frame_scale), 1)), interpolation=cv2.INTER_AREA)
     fh, fw = small_frame.shape[:2]
 
     overlay_w = max(int(fw * size_percent / 100), 1)
@@ -335,10 +341,18 @@ def generate_preview_animation(sample_frame_bgr, overlay_rgba, opacity=0.7, size
     max_x = max(fw - overlay_w, 0)
     max_y = max(fh - overlay_h, 0)
 
+    # Khung xem trước bị co nhỏ lại (preview_width << chiều rộng video thật)
+    # nên PHẢI co tốc độ (px/giây) theo ĐÚNG tỉ lệ đó — nếu không, cùng 1 số
+    # px/giây sẽ khiến trademark bay hết 1 vòng NHANH HƠN NHIỀU trên khung
+    # xem trước (vì khung nhỏ hơn nhưng tốc độ tuyệt đối giữ nguyên), làm
+    # người dùng thấy preview "bay nhanh hơn" hẳn so với video thực tế xử lý
+    # ra (bug đã gặp thực tế).
+    preview_speed = speed_px_per_sec * frame_scale
+
     frames = []
     for i in range(int(duration_sec * fps)):
         t = i / fps
-        x, y, rot = _compute_position(t, max_x, max_y, speed_px_per_sec, path_style, range_percent)
+        x, y, rot = _compute_position(t, max_x, max_y, preview_speed, path_style, range_percent)
         frame = _blend_overlay_rotated(small_frame.copy(), overlay, x, y, overlay_w, overlay_h, rot)
         frames.append(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
 
