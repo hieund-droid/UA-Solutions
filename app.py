@@ -721,7 +721,11 @@ def render_outro_swap():
     thay thế, GIỮ NGUYÊN nội dung gốc — không xáo trộn/ghép video với nhau.
     Mỗi video đầu vào cho ra đúng 1 video kết quả tương ứng."""
     st.title(":material/content_cut: Outro Solution")
-    st.caption("Cắt outro đối thủ ở cuối video, gắn outro của bạn vào thay thế.")
+    st.caption(
+        "Cắt outro đối thủ ở cuối video, gắn outro của bạn vào thay thế. "
+        "Tải lên ≥2 video CÙNG 1 đối thủ/app cùng lúc để cắt chính xác nhất — "
+        "chỉ có 1 video vẫn thử cắt được nếu dò ra điểm chuyển cảnh/badge cửa hàng ứng dụng."
+    )
 
     for key, default in [("outro_outputs", []), ("outro_run_error", None), ("outro_uploader_version", 0)]:
         if key not in st.session_state:
@@ -995,16 +999,29 @@ def render_outro_swap():
                 made = []
 
                 def on_source(done, total, name, result):
-                    if result["reason"] == "matched":
-                        status.write(f"[{done}/{total}] ✓ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro")
+                    reason = result["reason"]
+                    if reason == "matched":
+                        status.write(f"[{done}/{total}] ✓ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro (khớp với video khác)")
+                    elif reason == "solo_badge":
+                        status.write(
+                            f"[{done}/{total}] ✓ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro "
+                            "(không có video nào khác để so khớp, nhưng dò được điểm chuyển cảnh + "
+                            "nhận ra badge Google Play/App Store)"
+                        )
+                    elif reason == "solo_scene":
+                        status.write(
+                            f"[{done}/{total}] ⚠️ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro "
+                            "(chỉ dò được điểm chuyển cảnh, KHÔNG thấy badge xác nhận — nên xem lại kết "
+                            "quả kỹ hơn, độ tin cậy thấp hơn)"
+                        )
                     else:
                         tail = (
                             "video này có thể có 2 outro nối tiếp — kiểm tra lại."
                             if chosen_outro_path else "giữ nguyên, không gắn gì thêm."
                         )
                         status.write(
-                            f"[{done}/{total}] ⚠️ {name}: không tìm được video nào cùng "
-                            "outro trong mẻ này, không dám cắt liều — " + tail
+                            f"[{done}/{total}] ⚠️ {name}: không tìm được dấu hiệu outro nào (không có "
+                            "video khớp, không dò được điểm chuyển cảnh/badge), không dám cắt liều — " + tail
                         )
                     made.append(result)
 

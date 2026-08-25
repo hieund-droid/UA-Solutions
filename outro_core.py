@@ -29,10 +29,14 @@ Cách nhận diện outro đối thủ:
 
   Video nào không khớp được với video nào khác (vd chỉ tải lên 1 video duy
   nhất, hoặc không tìm được video nào khác cùng app trong mẻ tải lên) sẽ
-  KHÔNG cắt gì cả, giữ nguyên toàn bộ — chủ động chọn AN TOÀN thay vì đoán
-  liều (vd cắt cảnh cuối cùng): với số lượng lớn video trộn lẫn, rất có thể
-  1 video không khớp được ai đơn giản vì nó KHÔNG HỀ CÓ outro, nên đoán liều
-  dễ cắt nhầm vào nội dung thật hơn là giúp ích.
+  được thử thêm 1 lớp nhận diện DỰ PHÒNG (xem find_solo_outro_boundary):
+  tự dò điểm chuyển cảnh gần cuối video + xác nhận bằng badge cửa hàng ứng
+  dụng ("GET IT ON Google Play" / "Download on the App Store" — 2 mẫu
+  CHUẨN HOÁ giống nhau ở mọi app, so mẫu được). Chỉ khi cả 2 lớp (so khớp
+  chéo + lớp dự phòng) đều không tìm được gì mới GIỮ NGUYÊN, không cắt —
+  chủ động chọn AN TOÀN thay vì đoán liều (vd cắt cứng N giây cuối): rất có
+  thể video đó không hề có outro thật, đoán liều dễ cắt nhầm vào nội dung
+  thật hơn là giúp ích.
 
 Dùng module (import từ app.py):
     process_outro_swap(paths, own_outro_path, workdir, strip_audio)
@@ -47,6 +51,12 @@ import cv2
 import numpy as np
 
 from remix_core import concat_clips, ffprobe_info, split_clips
+
+# Thư mục chứa ảnh mẫu badge cửa hàng ứng dụng (Google Play, App Store) —
+# dùng cho _find_solo_outro_boundary bên dưới. Đây là ẢNH TĨNH đi kèm code
+# (không phải dữ liệu người dùng), nên nằm trong assets/, được commit vào
+# git (khác với outros/ chứa video người dùng tải lên, bị .gitignore).
+BADGE_TEMPLATES_DIR = Path(__file__).parent / "assets" / "badges"
 
 # Các mốc giây tính từ cuối video dùng để "dò thử" xem 2 video có outro
 # chung không. DÙNG NHIỀU MỐC (không phải 1 mốc cố định) vì outro thực tế
@@ -323,7 +333,185 @@ def _find_boundary_by_time(tail, other_tail, threshold, start_offset, shift=0.0)
     return max(duration - last_match_offset, duration - MAX_OUTRO_LOOKBACK)
 
 
-def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margin_seconds=0.15):
+# ============================================================================
+# Dò outro cho video ĐƠN LẺ — không có video nào khác để so khớp chéo
+# (xem find_outro_boundaries: trường hợp reason="none" ở trên). Trước đây
+# gặp trường hợp này là CHỊU, giữ nguyên không cắt gì (an toàn nhưng vô dụng
+# nếu người dùng chỉ có 1 video/app tại 1 thời điểm — phản hồi thực tế từ
+# người dùng: tải nhiều video nhưng KHÁC app nhau, mỗi app chỉ 1 video, nên
+# không video nào khớp được ai, không cắt được gì cả dù rõ ràng có outro).
+#
+# Cách nhận diện KHÔNG dựa vào so khớp chéo nữa mà dựa vào chính bản thân
+# video đó có 2 đặc điểm outro thường có:
+#   1. ĐIỂM CHUYỂN CẢNH rõ rệt gần cuối video (nội dung thật chuyển sang
+#      1 màn hình khác hẳn — thường là card tĩnh/hiệu ứng đồ hoạ).
+#   2. Card đó có dấu hiệu ĐẶC TRƯNG của outro quảng cáo app: badge cửa hàng
+#      ứng dụng ("GET IT ON Google Play" / "Download on the App Store") —
+#      2 mẫu này gần như CHUẨN HOÁ, giống hệt nhau ở MỌI app trên thế giới,
+#      khác hẳn logo/tên app (mỗi nơi 1 kiểu, không so mẫu chung được).
+#
+# Chỉ cắt khi có ĐIỂM CHUYỂN CẢNH — badge chỉ để TĂNG độ tin cậy (không bắt
+# buộc, vì không phải outro nào cũng có badge — có thể chỉ có chữ/logo tự
+# thiết kế, xem phản hồi người dùng). Vẫn giữ triết lý AN TOÀN: không tìm
+# được điểm chuyển cảnh nào đủ rõ thì KHÔNG cắt, giống hệt trường hợp
+# reason="none" hiện tại.
+SOLO_SCENE_LOOKBACK = 15.0
+# Ngưỡng chênh lệch histogram màu (Bhattacharyya, 0 = giống hệt, 1 = khác
+# hẳn) giữa 2 khung hình liền kề để coi là "chuyển cảnh". Xác định bằng
+# cách đo thực tế trên video mẫu: chuyển cảnh thật (vào outro) luôn ≥ 0.35,
+# trong khi nhiễu/chuyển động bình thường trong nội dung thật chỉ ~0.02-0.15
+# — để ngưỡng 0.2 ở GIỮA 2 vùng này, chừa biên độ an toàn cả 2 phía.
+SOLO_SCENE_CUT_THRESHOLD = 0.2
+# Ngưỡng độ khớp mẫu badge (TM_CCOEFF_NORMED, 1 = khớp tuyệt đối). Đo thực
+# tế: badge thật khớp ≥ 0.65 (dù ảnh mẫu chụp ở độ phân giải khác hẳn video
+# đang xét), vùng nội dung thường không vượt quá ~0.5.
+SOLO_BADGE_MATCH_THRESHOLD = 0.6
+# Các tỉ lệ thu nhỏ ảnh mẫu badge thử khi so khớp — badge trong video có
+# thể to/nhỏ rất khác nhau tuỳ độ phân giải + cách dàn trang của từng app.
+SOLO_BADGE_SCALES = [round(s, 3) for s in np.arange(0.12, 1.01, 0.04)]
+
+
+def _load_badge_templates():
+    """Đọc sẵn các ảnh mẫu badge (Google Play, App Store...) trong
+    assets/badges/ — gọi 1 lần, cache lại (xem find_solo_outro_boundary),
+    vì đây là ảnh cố định đi kèm code, không đổi giữa các lần gọi."""
+    templates = []
+    if not BADGE_TEMPLATES_DIR.exists():
+        return templates
+    for f in sorted(BADGE_TEMPLATES_DIR.glob("*.*")):
+        img = cv2.imread(str(f))
+        if img is not None:
+            templates.append(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
+    return templates
+
+
+_BADGE_TEMPLATES_CACHE = None
+
+
+def _badge_templates():
+    global _BADGE_TEMPLATES_CACHE
+    if _BADGE_TEMPLATES_CACHE is None:
+        _BADGE_TEMPLATES_CACHE = _load_badge_templates()
+    return _BADGE_TEMPLATES_CACHE
+
+
+def _frame_color_hist(frame_bgr):
+    """Histogram màu 2D (Hue+Saturation, 32 bin/kênh) đã chuẩn hoá — dùng để
+    so ĐỘ KHÁC BIỆT giữa 2 khung hình liền kề (_hist_diff), nhạy với đổi
+    CẢNH (màu sắc/bố cục thay đổi hẳn) hơn nhiều so với so màu trung bình
+    theo lưới (_color_thumb, dùng cho so khớp CHÉO giữa 2 video khác nhau ở
+    trên) — ở đây cần cái ngược lại: PHÂN BIỆT rõ 2 khung hình khác cảnh,
+    không cần bền với chuyển động/hiệu ứng nhỏ như _color_thumb."""
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    hist = cv2.calcHist([hsv], [0, 1], None, [32, 32], [0, 180, 0, 256])
+    cv2.normalize(hist, hist)
+    return hist
+
+
+def _hist_diff(h1, h2):
+    return float(cv2.compareHist(h1, h2, cv2.HISTCMP_BHATTACHARYYA))
+
+
+def _badge_best_score(frame_gray, templates, scales):
+    """Điểm khớp badge CAO NHẤT trên 1 khung hình, thử tất cả mẫu × tất cả
+    tỉ lệ thu nhỏ (xem SOLO_BADGE_SCALES) — trả về 0.0 nếu không có mẫu nào
+    nạp được (thư mục assets/badges rỗng) thay vì lỗi, để tính năng còn lại
+    (dò chuyển cảnh) vẫn chạy được kể cả thiếu ảnh mẫu."""
+    if not templates:
+        return 0.0
+    fh, fw = frame_gray.shape[:2]
+    best = 0.0
+    for tmpl in templates:
+        th, tw = tmpl.shape[:2]
+        for scale in scales:
+            w, h = int(tw * scale), int(th * scale)
+            if w < 8 or h < 8 or w >= fw or h >= fh:
+                continue
+            resized = cv2.resize(tmpl, (w, h), interpolation=cv2.INTER_AREA)
+            res = cv2.matchTemplate(frame_gray, resized, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, _ = cv2.minMaxLoc(res)
+            if max_val > best:
+                best = max_val
+    return best
+
+
+def find_solo_outro_boundary(path, duration, fps,
+                              lookback_seconds=SOLO_SCENE_LOOKBACK,
+                              cut_threshold=SOLO_SCENE_CUT_THRESHOLD,
+                              badge_threshold=SOLO_BADGE_MATCH_THRESHOLD):
+    """Dò outro cho 1 video ĐƠN LẺ, không cần video nào khác để so khớp chéo
+    — xem giải thích cách làm ở khối comment phía trên. Đọc TUẦN TỰ (giống
+    _read_tail_hashes) để tránh lỗi tua ngẫu nhiên gần cuối file.
+
+    Trả về dict {"outro_start": giây, "confidence": "badge" | "scene"} nếu
+    tìm được ranh giới đủ tin cậy, hoặc None nếu không tìm được gì (giữ
+    nguyên, không cắt — an toàn)."""
+    cap = cv2.VideoCapture(str(path))
+    start_t = max(duration - lookback_seconds, 0.0)
+    cap.set(cv2.CAP_PROP_POS_MSEC, start_t * 1000)
+
+    prev_hist = None
+    # cut_candidates: list các mốc "giây trước khi kết thúc" mà tại đó phát
+    # hiện chuyển cảnh — chỉ giữ giây (số thực nhẹ), KHÔNG giữ khung hình
+    # gốc (tốn RAM, xem lý do tương tự _read_tail_hashes: server miễn phí
+    # RAM rất hạn chế).
+    cut_candidates = []
+    idx = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        hist = _frame_color_hist(frame)
+        if prev_hist is not None:
+            diff = _hist_diff(prev_hist, hist)
+            if diff >= cut_threshold:
+                t = start_t + idx / fps
+                cut_candidates.append(duration - t)
+        prev_hist = hist
+        idx += 1
+    cap.release()
+
+    if not cut_candidates:
+        return None
+
+    # Lấy mốc GẦN CUỐI VIDEO NHẤT (nhỏ nhất) trong số các điểm chuyển cảnh —
+    # đây chính là điểm chuyển vào "cảnh cuối cùng" (outro, nếu có). Các
+    # điểm chuyển cảnh XA hơn (vd giữa 2 đoạn nội dung thật) bị bỏ qua, kể
+    # cả khi độ chênh lệch màu ở đó lớn hơn — đã kiểm chứng thực tế: 1 video
+    # có thể có nhiều điểm chuyển cảnh trong phần nội dung, chỉ điểm GẦN
+    # CUỐI NHẤT mới đáng tin là ranh giới outro.
+    outro_start_before_end = min(cut_candidates)
+    outro_start = max(duration - outro_start_before_end, 0.0)
+
+    # Xác nhận thêm bằng badge — chỉ cần ĐỌC LẠI 1 đoạn NGẮN (từ điểm chuyển
+    # cảnh tới hết video), không phải đọc lại toàn bộ lookback_seconds như
+    # lần quét đầu.
+    templates = _badge_templates()
+    badge_found = False
+    if templates:
+        cap2 = cv2.VideoCapture(str(path))
+        cap2.set(cv2.CAP_PROP_POS_MSEC, outro_start * 1000)
+        checked = 0
+        while checked < int(round(outro_start_before_end * fps)) + 2:
+            ok, frame = cap2.read()
+            if not ok:
+                break
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            score = _badge_best_score(gray, templates, SOLO_BADGE_SCALES)
+            if score >= badge_threshold:
+                badge_found = True
+                break
+            checked += 1
+        cap2.release()
+
+    return {
+        "outro_start": outro_start,
+        "confidence": "badge" if badge_found else "scene",
+    }
+
+
+def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margin_seconds=0.15,
+                           enable_solo_detection=True):
     """Xác định mốc thời gian bắt đầu outro đối thủ cho mỗi video, bằng cách
     so khớp hình ảnh CHÉO giữa các video trong cùng danh sách `paths`ở NHIỀU
     mốc thời gian khác nhau (xem _probe_offsets — outro thực tế dài
@@ -343,9 +531,19 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
 
     Trả về list dict cùng độ dài `paths`:
       - outro_start: giây bắt đầu outro trong video gốc, None nếu không cắt.
-      - reason: "matched" (khớp được với video khác — chắc chắn) |
-                "none" (không khớp được video nào khác — GIỮ NGUYÊN, không
-                đoán liều, vì rất có thể video đó không hề có outro).
+      - reason: "matched" (khớp được với video khác — chắc chắn nhất) |
+                "solo_badge" (không khớp được video nào khác, nhưng dò được
+                điểm chuyển cảnh gần cuối VÀ xác nhận có badge cửa hàng ứng
+                dụng — khá tin cậy) |
+                "solo_scene" (không khớp được video nào khác, chỉ dò được
+                điểm chuyển cảnh gần cuối, KHÔNG thấy badge xác nhận — kém
+                tin cậy hơn 2 loại trên, nên soát lại kết quả) |
+                "none" (không tìm được dấu hiệu outro nào — GIỮ NGUYÊN,
+                không đoán liều).
+
+    `enable_solo_detection`: tắt đi (False) để chỉ dùng so khớp chéo như
+    trước đây — dùng khi cần so sánh/kiểm tra hồi quy, bình thường luôn để
+    True.
     """
     n = len(paths)
     infos = [ffprobe_info(p) for p in paths]
@@ -404,6 +602,23 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
                 continue
             results[i] = {"outro_start": max(best_boundary - safety_margin_seconds, 0.0), "reason": "matched"}
 
+    # Video nào vẫn "none" (không khớp được video nào khác — thường là chỉ
+    # có 1 video/app trong mẻ này) — thử thêm 1 lớp nhận diện KHÔNG cần so
+    # khớp chéo (xem find_solo_outro_boundary phía trên: dò điểm chuyển
+    # cảnh gần cuối + xác nhận bằng badge cửa hàng ứng dụng). Đây là lớp bổ
+    # sung, KHÔNG thay thế so khớp chéo (so khớp chéo vẫn đáng tin hơn khi
+    # có được, nên luôn ưu tiên chạy trước như ở trên).
+    if enable_solo_detection:
+        for i in range(n):
+            if results[i]["reason"] != "none":
+                continue
+            solo = find_solo_outro_boundary(paths[i], durations[i], infos[i]["fps"] or 30)
+            if solo is None:
+                continue
+            outro_start = max(solo["outro_start"] - safety_margin_seconds, 0.0)
+            reason = "solo_badge" if solo["confidence"] == "badge" else "solo_scene"
+            results[i] = {"outro_start": outro_start, "reason": reason}
+
     return results
 
 
@@ -452,7 +667,7 @@ def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, work
 
 def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
                         tail_match_threshold=DEFAULT_MATCH_THRESHOLD, on_source=None,
-                        max_workers=1, safety_margin_seconds=0.15):
+                        max_workers=1, safety_margin_seconds=0.15, enable_solo_detection=True):
     """Với mỗi video trong `paths`: cắt outro đối thủ (nếu xác định được),
     rồi gắn `own_outro_path` vào cuối — GIỮ NGUYÊN nội dung gốc, không xáo
     trộn, không ghép với video khác. Mỗi video đầu vào cho ra đúng 1 video
@@ -483,7 +698,9 @@ def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
     clips_dir = workdir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
 
-    boundaries = find_outro_boundaries(paths, tail_match_threshold, safety_margin_seconds)
+    boundaries = find_outro_boundaries(
+        paths, tail_match_threshold, safety_margin_seconds, enable_solo_detection,
+    )
     own_info = ffprobe_info(own_outro_path) if own_outro_path is not None else None
 
     made = [None] * len(paths)
