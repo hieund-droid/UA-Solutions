@@ -32,10 +32,28 @@ import numpy as np
 
 from remix_core import detect_scenes, ffprobe_info, run
 
-TRACKER_FACTORIES = {
-    "CSRT (chính xác hơn, chậm hơn)": cv2.TrackerCSRT_create,
-    "KCF (nhanh hơn, kém chính xác hơn)": cv2.TrackerKCF_create,
-}
+def _find_tracker_factory(name):
+    """API theo dõi vật thể (CSRT/KCF) nằm ở chỗ khác nhau tuỳ phiên bản/hệ
+    điều hành build OpenCV — có bản để thẳng ở cv2.TrackerXXX_create, có bản
+    chuyển vào cv2.legacy.TrackerXXX_create. Dò cả 2 chỗ thay vì cố định 1
+    chỗ, để tránh lỗi mất hẳn tính năng (hoặc tệ hơn — sập cả module lúc
+    import) chỉ vì khác bản OpenCV giữa máy dev và máy chủ thật."""
+    for holder in (cv2, getattr(cv2, "legacy", None)):
+        factory = getattr(holder, f"Tracker{name}_create", None)
+        if factory is not None:
+            return factory
+    return None
+
+
+# Chỉ liệt kê tracker THỰC SỰ có sẵn trên máy đang chạy — nếu bản OpenCV
+# không có cái nào (hiếm), dict này rỗng, UI sẽ tự báo rõ thay vì crash.
+TRACKER_FACTORIES = {}
+_csrt = _find_tracker_factory("CSRT")
+if _csrt:
+    TRACKER_FACTORIES["CSRT (chính xác hơn, chậm hơn)"] = _csrt
+_kcf = _find_tracker_factory("KCF")
+if _kcf:
+    TRACKER_FACTORIES["KCF (nhanh hơn, kém chính xác hơn)"] = _kcf
 
 
 def _scene_containing(scenes, t0):

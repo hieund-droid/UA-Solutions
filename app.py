@@ -31,7 +31,17 @@ from streamlit_cropper import st_cropper
 
 import remix_core as core
 import outro_core
-import logo_cover_core
+
+# Import "mềm" — nếu logo_cover_core lỗi (vd thư viện tracking khác nhau
+# giữa các máy/hệ điều hành, như đã từng gặp), tab "Video Remixer" và
+# "Cắt & Gắn Outro" (2 tool đang dùng thật) VẪN PHẢI chạy được bình thường,
+# không được để 1 tính năng (hiện đang khoá tạm) kéo sập cả app.
+try:
+    import logo_cover_core
+    LOGO_COVER_IMPORT_ERROR = None
+except Exception as e:  # noqa: BLE001 — cố ý bắt mọi lỗi import ở đây
+    logo_cover_core = None
+    LOGO_COVER_IMPORT_ERROR = str(e)
 
 st.set_page_config(page_title="Video Tools", page_icon="🎬", layout="wide")
 
@@ -798,6 +808,21 @@ def render_logo_cover():
         return
 
     st.title("🚫 Che Logo Đối Thủ")
+
+    if logo_cover_core is None:
+        st.error(
+            f"Module `logo_cover_core` bị lỗi khi import, tool này tạm thời "
+            f"không dùng được trên máy chủ hiện tại (không ảnh hưởng 2 tool "
+            f"kia). Chi tiết lỗi: `{LOGO_COVER_IMPORT_ERROR}`"
+        )
+        return
+    if not logo_cover_core.TRACKER_FACTORIES:
+        st.error(
+            "Bản OpenCV trên máy chủ này không có sẵn thuật toán theo dõi "
+            "vật thể (CSRT/KCF) — tool này tạm thời không dùng được ở đây."
+        )
+        return
+
     st.caption(
         "Khoanh vùng logo/chữ thương hiệu đối thủ ở 1 khung hình — tool tự "
         "bám theo (object tracking) và vẽ đè logo của bạn lên đúng vị trí."
