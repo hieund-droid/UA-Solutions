@@ -323,13 +323,23 @@ def _find_boundary_by_time(tail, other_tail, threshold, start_offset, shift=0.0)
     return max(duration - last_match_offset, duration - MAX_OUTRO_LOOKBACK)
 
 
-def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD):
+def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margin_seconds=0.15):
     """Xác định mốc thời gian bắt đầu outro đối thủ cho mỗi video, bằng cách
     so khớp hình ảnh CHÉO giữa các video trong cùng danh sách `paths`ở NHIỀU
     mốc thời gian khác nhau (xem _probe_offsets — outro thực tế dài
     rất khác nhau tuỳ app, từ ~1 giây tới vài giây). Tự gom nhóm theo độ
     giống nhau — tải lên trộn lẫn nhiều app/đối thủ khác nhau trong 1 lần
     vẫn tự tách đúng thành từng nhóm riêng, không cần tự sắp xếp trước.
+
+    `safety_margin_seconds`: chỉ áp dụng cho video ĐÃ xác định được ranh
+    giới ("matched") — lùi ranh giới đó thêm 1 chút VÀO PHÍA NỘI DUNG THẬT
+    (cắt dư 1 ít nội dung thay vì cắt thiếu outro). Thuật toán so khớp màu
+    theo lưới (_color_thumb) tìm ranh giới khá chính xác nhưng KHÔNG tuyệt
+    đối 100% mọi trường hợp (vd outro có chuyển động/hiệu ứng phức tạp) —
+    thà mất thêm vài phần mười giây nội dung thật (thường không ai nhận ra
+    trên 1 video quảng cáo vài chục giây) còn hơn để sót 1 khung outro lộ
+    liễu ở cuối video. KHÔNG áp dụng cho video "none" (không khớp được ai)
+    — ở đó không có ranh giới nào để lùi cả.
 
     Trả về list dict cùng độ dài `paths`:
       - outro_start: giây bắt đầu outro trong video gốc, None nếu không cắt.
@@ -392,7 +402,7 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD):
                     best_boundary = boundary
             if best_boundary is None:
                 continue
-            results[i] = {"outro_start": best_boundary, "reason": "matched"}
+            results[i] = {"outro_start": max(best_boundary - safety_margin_seconds, 0.0), "reason": "matched"}
 
     return results
 
@@ -442,7 +452,7 @@ def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, work
 
 def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
                         tail_match_threshold=DEFAULT_MATCH_THRESHOLD, on_source=None,
-                        max_workers=1):
+                        max_workers=1, safety_margin_seconds=0.15):
     """Với mỗi video trong `paths`: cắt outro đối thủ (nếu xác định được),
     rồi gắn `own_outro_path` vào cuối — GIỮ NGUYÊN nội dung gốc, không xáo
     trộn, không ghép với video khác. Mỗi video đầu vào cho ra đúng 1 video
@@ -451,6 +461,9 @@ def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
     `own_outro_path` có thể là None — khi đó CHỈ cắt outro đối thủ (nếu xác
     định được), KHÔNG gắn thêm gì vào cuối. Dùng cho người chỉ cần bỏ outro
     đối thủ đi (vd để tự gắn trademark riêng, hoặc không cần outro nào cả).
+
+    `safety_margin_seconds`: xem find_outro_boundaries() — cắt dư thêm 1 ít
+    vào nội dung thật để chắc chắn không còn sót khung outro nào ở cuối.
 
     Có thể xử lý SONG SONG tối đa `max_workers` video cùng lúc để tận dụng
     nhiều lõi CPU — nhưng MẶC ĐỊNH LÀ 1 (tuần tự, an toàn) vì mỗi video chạy
@@ -470,7 +483,7 @@ def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
     clips_dir = workdir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
 
-    boundaries = find_outro_boundaries(paths, tail_match_threshold)
+    boundaries = find_outro_boundaries(paths, tail_match_threshold, safety_margin_seconds)
     own_info = ffprobe_info(own_outro_path) if own_outro_path is not None else None
 
     made = [None] * len(paths)

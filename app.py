@@ -760,6 +760,18 @@ def render_outro_swap():
             "để cao dễ bị crash/treo cả app giữa chừng)",
             min_value=1, max_value=16, value=1, step=1, key="outro_max_workers",
         )
+        safety_margin = st.number_input(
+            "Cắt dư thêm vào nội dung (giây) — để chắc chắn không sót outro",
+            min_value=0.0, max_value=2.0, value=0.15, step=0.05, key="outro_safety_margin",
+            help=(
+                "Việc dò ranh giới outro không phải lúc nào cũng chính xác 100% "
+                "(vd outro có chuyển động/hiệu ứng phức tạp). Cắt dư thêm 1 chút "
+                "vào nội dung thật (thường không ai nhận ra trên vài chục giây "
+                "video) để đảm bảo không còn sót khung outro nào ở cuối video. "
+                "Chỉ áp dụng cho video ĐÃ xác định được outro — không ảnh hưởng "
+                "video không khớp được (không cắt gì)."
+            ),
+        )
         strip_audio = st.checkbox("Bỏ âm thanh trong video kết quả", key="outro_strip_audio")
 
     with st.expander("🏷️ Thêm trademark bay ziczac vào video kết quả (tuỳ chọn)"):
@@ -919,7 +931,7 @@ def render_outro_swap():
                 outro_core.process_outro_swap(
                     input_paths, chosen_outro_path, workdir, strip_audio,
                     tail_match_threshold=match_threshold, on_source=on_source,
-                    max_workers=int(max_workers),
+                    max_workers=int(max_workers), safety_margin_seconds=safety_margin,
                 )
 
                 trademark_ready = add_trademark and (
