@@ -186,6 +186,22 @@ def _outro_duration(path_str, mtime):
     return core.ffprobe_info(Path(path_str))["duration"]
 
 
+@st.cache_data(show_spinner=False)
+def _sample_frame_from_upload(_file_bytes, sig, suffix):
+    """Lấy 1 khung hình mẫu từ file upload (để làm nền xem trước trademark)
+    — cache theo `sig` (tên+size, rẻ để so sánh) chứ KHÔNG hash toàn bộ nội
+    dung file (`_file_bytes` bắt đầu bằng gạch dưới nên Streamlit bỏ qua
+    khi tính cache key) — tránh phải hash lại vài MB dữ liệu mỗi lần trang
+    tự load lại (mỗi khi kéo thanh trượt)."""
+    tmp_dir = Path(tempfile.mkdtemp(prefix="tm_preview_"))
+    tmp_path = tmp_dir / f"sample{suffix}"
+    tmp_path.write_bytes(_file_bytes)
+    try:
+        return core._grab_frame_bgr(tmp_path, 1.0)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 def _fade_thumb(thumb, amount=0.7):
     """Làm ảnh nhạt dần về màu trắng (amount=0 giữ nguyên, 1 = trắng hoàn
     toàn) — dùng để làm mờ các outro KHÔNG được chọn, làm nổi bật cái đang
@@ -740,29 +756,63 @@ def render_outro_swap():
         trademark_logo_file = None
         trademark_opacity = trademark_size = trademark_speed = None
         if add_trademark:
-            trademark_kind = st.radio(
-                "Loại trademark", ["Chữ", "Logo/hình ảnh"], key="outro_trademark_kind", horizontal=True,
-            )
-            if trademark_kind == "Chữ":
-                trademark_text = st.text_input("Nội dung chữ", key="outro_trademark_text")
-            else:
-                trademark_logo_file = st.file_uploader(
-                    "Ảnh logo (khuyến khích PNG nền trong suốt)", type=["png", "jpg", "jpeg"],
-                    key="outro_trademark_logo",
+            settings_col, preview_col = st.columns([3, 2])
+
+            with settings_col:
+                trademark_kind = st.radio(
+                    "Loại trademark", ["Chữ", "Logo/hình ảnh"], key="outro_trademark_kind", horizontal=True,
                 )
-            trademark_opacity = st.slider("Độ mờ (%)", 10, 100, 70, key="outro_trademark_opacity")
-            trademark_size = st.slider(
-                "Độ lớn (% chiều rộng video)", 5, 40, 15, key="outro_trademark_size",
-            )
-            trademark_speed = st.slider(
-                "Tốc độ bay", 30, 400, 150, key="outro_trademark_speed",
-                help="Số nhỏ = bay chậm, số lớn = bay nhanh.",
-            )
-            st.caption(
-                "⚠️ Đường bay đi KHẮP khung hình (theo yêu cầu), nên có lúc sẽ đi "
-                "qua vùng giữa (thường là chủ thể chính) — không có cách tự nhận "
-                "diện nội dung để tránh 100%. Giảm độ mờ/độ lớn nếu muốn hạn chế che."
-            )
+                if trademark_kind == "Chữ":
+                    trademark_text = st.text_input("Nội dung chữ", key="outro_trademark_text")
+                else:
+                    trademark_logo_file = st.file_uploader(
+                        "Ảnh logo (khuyến khích PNG nền trong suốt)", type=["png", "jpg", "jpeg"],
+                        key="outro_trademark_logo",
+                    )
+                trademark_opacity = st.slider("Độ mờ (%)", 10, 100, 70, key="outro_trademark_opacity")
+                trademark_size = st.slider(
+                    "Độ lớn (% chiều rộng video)", 5, 40, 15, key="outro_trademark_size",
+                )
+                trademark_speed = st.slider(
+                    "Tốc độ bay", 30, 400, 150, key="outro_trademark_speed",
+                    help="Số nhỏ = bay chậm, số lớn = bay nhanh.",
+                )
+                st.caption(
+                    "⚠️ Đường bay đi KHẮP khung hình (theo yêu cầu), nên có lúc sẽ đi "
+                    "qua vùng giữa (thường là chủ thể chính) — không có cách tự nhận "
+                    "diện nội dung để tránh 100%. Giảm độ mờ/độ lớn nếu muốn hạn chế che."
+                )
+
+            with preview_col:
+                st.caption("👁️ Xem trước nhanh (mô phỏng, không phải video thật):")
+                preview_overlay = None
+                if trademark_kind == "Chữ" and trademark_text and trademark_text.strip():
+                    preview_overlay = trademark_core.render_text_overlay(trademark_text.strip())
+                elif trademark_kind == "Logo/hình ảnh" and trademark_logo_file is not None:
+                    tmp_logo_dir = Path(tempfile.mkdtemp(prefix="tm_logo_preview_"))
+                    tmp_logo = tmp_logo_dir / f"logo{Path(trademark_logo_file.name).suffix}"
+                    tmp_logo.write_bytes(trademark_logo_file.getvalue())
+                    preview_overlay = trademark_core.load_logo_overlay(tmp_logo)
+
+                if preview_overlay is None:
+                    st.info("Nhập chữ hoặc tải logo ở bên trái để xem trước.")
+                elif not has_files:
+                    st.info("Tải video đối thủ lên (ở trên) để xem trước trên khung hình thật.")
+                else:
+                    first_file = uploaded_files[0]
+                    sample_frame = _sample_frame_from_upload(
+                        first_file.getvalue(), (first_file.name, first_file.size),
+                        Path(first_file.name).suffix,
+                    )
+                    if sample_frame is None:
+                        st.warning("Không đọc được khung hình mẫu từ video đầu tiên.")
+                    else:
+                        preview_bytes = trademark_core.generate_preview_animation(
+                            sample_frame, preview_overlay,
+                            opacity=trademark_opacity / 100, size_percent=trademark_size,
+                            speed_px_per_sec=trademark_speed,
+                        )
+                        st.image(preview_bytes, use_container_width=True)
 
     output_name = st.text_input(
         "Đặt tên file xuất ra (tuỳ chọn)",

@@ -20,8 +20,14 @@ Dùng module (import từ app.py):
     load_logo_overlay(path) -> RGBA numpy array
     apply_trademark(video_path, overlay_rgba, out_path, workdir,
                      opacity, size_percent, speed_px_per_sec)
+    generate_preview_animation(sample_frame_bgr, overlay_rgba, opacity,
+                                size_percent, speed_px_per_sec) -> bytes
+        (WEBP động) — xem trước NHANH (ảnh nhỏ, vài giây) để biết thực tế
+        độ mờ/độ lớn/tốc độ trông ra sao trước khi xử lý cả video, tránh
+        phải chỉnh mù theo số.
 """
 
+import io
 from pathlib import Path
 
 import cv2
@@ -173,3 +179,41 @@ def apply_trademark(video_path, overlay_rgba, out_path, workdir,
     ])
     silent_path.unlink(missing_ok=True)
     return out_path
+
+
+def generate_preview_animation(sample_frame_bgr, overlay_rgba, opacity=0.7, size_percent=15,
+                                speed_px_per_sec=150, duration_sec=3.0, fps=8, preview_width=220):
+    """Sinh 1 ảnh ĐỘNG nhỏ, NHANH (không dùng ffmpeg, chỉ vài khung hình độ
+    phân giải thấp) để xem trước ngay khi chỉnh độ mờ/độ lớn/tốc độ — không
+    cần đợi xử lý cả video mới biết trông ra sao. Trả về bytes ảnh WEBP động
+    (không dùng GIF — đã đo thực tế: GIF của PIL chậm hơn WEBP animation tới
+    15-20 lần cho cùng số khung hình, do PIL phải tính lại bảng màu giới hạn
+    256 màu cho từng khung — không phù hợp để cập nhật theo thời gian thực
+    mỗi lần kéo thanh trượt)."""
+    h, w = sample_frame_bgr.shape[:2]
+    scale = preview_width / w
+    small_frame = cv2.resize(sample_frame_bgr, (preview_width, max(int(h * scale), 1)), interpolation=cv2.INTER_AREA)
+    fh, fw = small_frame.shape[:2]
+
+    overlay_w = max(int(fw * size_percent / 100), 1)
+    oscale = overlay_w / overlay_rgba.shape[1]
+    overlay_h = max(int(overlay_rgba.shape[0] * oscale), 1)
+    overlay = cv2.resize(overlay_rgba, (overlay_w, overlay_h), interpolation=cv2.INTER_AREA).copy()
+    overlay[:, :, 3] = (overlay[:, :, 3].astype(np.float32) * max(0.0, min(opacity, 1.0))).astype(np.uint8)
+
+    max_x = max(fw - overlay_w, 0)
+    max_y = max(fh - overlay_h, 0)
+
+    frames = []
+    for i in range(int(duration_sec * fps)):
+        t = i / fps
+        x, y = _zigzag_position(t, max_x, max_y, speed_px_per_sec)
+        frame = _blend_overlay_at(small_frame.copy(), overlay, x, y)
+        frames.append(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+
+    buf = io.BytesIO()
+    frames[0].save(
+        buf, format="WEBP", save_all=True, append_images=frames[1:],
+        duration=int(1000 / fps), loop=0, quality=70, method=0,
+    )
+    return buf.getvalue()
