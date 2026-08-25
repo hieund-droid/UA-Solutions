@@ -83,29 +83,25 @@ st.markdown(
     }
     hr { margin: 1.6rem 0; }
 
-    /* Thanh menu bên trái: cho ô radio trông giống danh sách điều hướng,
-    tô nền đen cho mục đang chọn — chỉ đổi màu nền/chữ, KHÔNG đụng tới
-    font-family, để chữ tiếng Việt luôn hiển thị đúng. Ép rộng hết chiều
-    ngang thanh bên trái (trước đó chỉ vừa khít chữ). */
-    section[data-testid="stSidebar"] div[role="radiogroup"] {
-        width: 100%;
+    /* Thanh menu bên trái — style nền tối, tối giản (xem render_sidebar_nav
+    ở cuối file để biết phần CSS ĐỘNG theo trạng thái thu gọn/mở rộng +
+    mục đang chọn, chỉ khai báo tĩnh chung ở đây). */
+    section[data-testid="stSidebar"] {
+        background-color: #14161b;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label {
-        display: flex; padding: 0.55rem 0.7rem; border-radius: 8px;
-        width: 100%; box-sizing: border-box; margin-bottom: 2px;
+    section[data-testid="stSidebar"] * { color: #9aa0a6; }
+    [class*="st-key-nav_"] button {
+        display: flex; align-items: center; justify-content: flex-start !important;
+        gap: 0.6rem; width: 100%; border: none !important; background: transparent;
+        border-radius: 10px; padding: 0.55rem 0.8rem; margin-bottom: 2px;
+        text-align: left; font-weight: 500;
     }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label > div {
-        width: 100%;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-        background-color: #F0F0F0;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
-        background-color: #111111;
-    }
-    section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
-        color: #FFFFFF;
-    }
+    /* KHÔNG !important ở trên — để CSS động (màu nền mục ĐANG CHỌN, xem
+    _sidebar_state_css) luôn thắng được, tránh 2 luật cùng độ ưu tiên
+    "đấu nhau" tuỳ thứ tự chèn vào trang (đã gặp thật: nền cam của mục đang
+    chọn bị luật "trong suốt mặc định" này đè mất dù chèn SAU). */
+    [class*="st-key-nav_"] button:hover { background: #1e2129 !important; }
+    [class*="st-key-nav_"] button p { text-align: left; }
 
     /* Ghim khối tài khoản/đăng xuất xuống cuối thanh bên trái — neo trực
     tiếp theo chiều cao màn hình (100vh) ở đúng vùng nội dung sidebar, tránh
@@ -115,6 +111,22 @@ st.markdown(
         display: flex; flex-direction: column; min-height: 100vh;
     }
     .st-key-sidebar_footer { margin-top: auto; }
+
+    /* Tiêu đề + dòng phụ đầu thanh bên, nút thu gọn/mở rộng (mũi tên tròn
+    nhỏ, giống mẫu tham khảo) và nút "Log out" — tất cả theo tông tối. */
+    .sidebar-title { color: #e8eaed; font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
+    .sidebar-subtitle { color: #6b7280; font-size: 0.78rem; white-space: nowrap; margin-bottom: 0.5rem; }
+    .st-key-sidebar_toggle button {
+        border-radius: 50% !important; border: 1px solid #2a2d35 !important;
+        background: #1e2129 !important; width: 30px !important; height: 30px !important;
+        padding: 0 !important; min-height: 30px !important;
+    }
+    .st-key-sidebar_toggle button span { color: #9aa0a6 !important; }
+    .st-key-logout_btn button {
+        border: 1px solid #2a2d35 !important; background: transparent !important;
+        color: #9aa0a6 !important; justify-content: flex-start !important; gap: 0.6rem;
+    }
+    .st-key-logout_btn button:hover { background: #1e2129 !important; border-color: #3a3d45 !important; }
 
     /* Chuyển mượt khi ảnh xem trước outro đổi giữa mờ (không được chọn) và
     rõ (đang chọn), thay vì đổi ngay lập tức. */
@@ -1249,23 +1261,72 @@ def render_logo_cover():
 check_ffmpeg()
 
 # Danh sách công cụ hiện trên thanh menu bên trái — thêm công cụ mới sau này
-# chỉ cần thêm 1 dòng vào đây (nhãn hiện trên menu -> hàm render tương ứng),
-# không cần sửa gì chỗ khác.
-PAGES = {
-    "🎬  Video Remixer": render_video_remixer,
-    "✂️  Cắt & Gắn Outro": render_outro_swap,
-    "🚫  Che Logo Đối Thủ": render_logo_cover,
-}
+# chỉ cần thêm 1 dòng vào đây (icon Material Symbols + nhãn + hàm render),
+# không cần sửa gì chỗ khác. Thứ tự trong list = thứ tự hiện trên menu.
+NAV_ITEMS = [
+    {"key": "outro", "label": "Outro Solution", "icon": "content_cut", "fn": render_outro_swap},
+    {"key": "remix", "label": "Video Remixer", "icon": "shuffle", "fn": render_video_remixer},
+    {"key": "logocover", "label": "Logo Cover", "icon": "shield", "fn": render_logo_cover},
+]
+
+if "nav_page" not in st.session_state:
+    st.session_state.nav_page = NAV_ITEMS[0]["key"]
+if "sidebar_collapsed" not in st.session_state:
+    st.session_state.sidebar_collapsed = False
+
+
+def _sidebar_state_css(collapsed, active_key):
+    """CSS ĐỘNG theo trạng thái hiện tại — tách riêng khỏi CSS tĩnh ở đầu
+    file vì phụ thuộc session_state (thu gọn/mở rộng, mục đang chọn), phải
+    tính lại mỗi lần vẽ trang. Thu gọn: chỉ ép hẹp bề rộng thanh bên +
+    ẩn phần chữ (nhãn, tiêu đề, dòng phụ) — vẫn giữ icon để bấm được bình
+    thường, không tắt hẳn."""
+    width = "76px" if collapsed else "230px"
+    label_display = "none" if collapsed else "inline"
+    text_display = "none" if collapsed else "block"
+    rules = [
+        f'section[data-testid="stSidebar"] {{ width: {width} !important; min-width: {width} !important; }}',
+        f'[class*="st-key-nav_"] button p {{ display: {label_display}; }}',
+        f'.sidebar-title, .sidebar-subtitle, .st-key-logout_btn button p {{ display: {text_display}; }}',
+    ]
+    for item in NAV_ITEMS:
+        cls = f'.st-key-nav_{item["key"]} button'
+        if item["key"] == active_key:
+            rules.append(
+                f'{cls} {{ background: rgba(245,166,35,0.16) !important; color: #f5a623 !important; }} '
+                f'{cls} span[data-testid="stIconMaterial"] {{ color: #f5a623 !important; }}'
+            )
+        else:
+            rules.append(f'{cls} span[data-testid="stIconMaterial"] {{ color: #9aa0a6; }}')
+    return "<style>" + "\n".join(rules) + "</style>"
+
 
 with st.sidebar:
-    st.markdown("## 🧰 Video Tools")
-    st.caption("Bộ công cụ nội bộ Apero")
-    choice = st.radio(
-        "Công cụ", list(PAGES.keys()), label_visibility="collapsed", key="nav_choice",
-    )
+    st.markdown(_sidebar_state_css(st.session_state.sidebar_collapsed, st.session_state.nav_page), unsafe_allow_html=True)
+
+    top_left, top_right = st.columns([5, 1])
+    with top_left:
+        st.markdown('<div class="sidebar-title">UA Solutions</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-subtitle">Apero internal tools</div>', unsafe_allow_html=True)
+    with top_right:
+        if st.button("", icon=":material/chevron_right:", key="sidebar_toggle", help="Thu gọn/Mở rộng"):
+            st.session_state.sidebar_collapsed = not st.session_state.sidebar_collapsed
+            st.rerun()
+
+    for item in NAV_ITEMS:
+        if st.button(
+            item["label"], icon=f":material/{item['icon']}:", key=f"nav_{item['key']}",
+            use_container_width=True,
+        ):
+            st.session_state.nav_page = item["key"]
+            st.rerun()
+
     with st.container(key="sidebar_footer"):
         st.divider()
-        st.caption("🔓 Đã đăng nhập")
-        st.button("Đăng xuất", on_click=lambda: st.session_state.pop("authed", None), key="logout_btn")
+        st.button(
+            "Log out", icon=":material/logout:", key="logout_btn", use_container_width=True,
+            on_click=lambda: st.session_state.pop("authed", None),
+        )
 
-PAGES[choice]()
+active_item = next(x for x in NAV_ITEMS if x["key"] == st.session_state.nav_page)
+active_item["fn"]()
