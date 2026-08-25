@@ -83,6 +83,14 @@ st.markdown(
     }
     hr { margin: 1.6rem 0; }
 
+    /* Ẩn nút thu gọn/mở rộng GỐC của Streamlit (mũi tên « ở đầu sidebar +
+    nút hiện lại khi đã ẩn hẳn) — chỉ dùng ĐÚNG 1 nút thu gọn/mở rộng tự
+    làm riêng (xem render_sidebar_nav ở cuối file), tránh có 2 cơ chế cùng
+    lúc gây rối. */
+    [data-testid="stSidebarCollapseButton"], [data-testid="collapsedControl"] {
+        display: none !important;
+    }
+
     /* Thanh menu bên trái — style nền tối, tối giản (xem render_sidebar_nav
     ở cuối file để biết phần CSS ĐỘNG theo trạng thái thu gọn/mở rộng +
     mục đang chọn, chỉ khai báo tĩnh chung ở đây). */
@@ -1309,7 +1317,7 @@ with st.sidebar:
         st.markdown('<div class="sidebar-title">UA Solutions</div>', unsafe_allow_html=True)
         st.markdown('<div class="sidebar-subtitle">Apero internal tools</div>', unsafe_allow_html=True)
     with top_right:
-        if st.button("", icon=":material/chevron_right:", key="sidebar_toggle", help="Thu gọn/Mở rộng"):
+        if st.button("", icon=":material/chevron_right:", key="sidebar_toggle"):
             st.session_state.sidebar_collapsed = not st.session_state.sidebar_collapsed
             st.rerun()
 
