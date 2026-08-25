@@ -1,19 +1,21 @@
-"""Video Tools — giao diện web đơn giản chạy trên máy, gồm 2 công cụ:
+"""UA Solutions — giao diện web đơn giản chạy trên máy, gồm 3 công cụ:
 
-  🎬 Video Remixer — kéo-thả nhiều video vào, tách từng đoạn theo cảnh, xáo
+  Video Remixer — kéo-thả nhiều video vào, tách từng đoạn theo cảnh, xáo
      trộn ngẫu nhiên rồi ghép lại thành nhiều video mới, dùng làm creative
      chạy ads.
 
-  ✂️ Cắt & Gắn Outro — tải lên nhiều video của ĐỐI THỦ (có outro/CTA giống
+  Outro Solution — tải lên nhiều video của ĐỐI THỦ (có outro/CTA giống
      nhau ở cuối), tự động cắt bỏ outro đó và gắn outro của MÌNH vào thay
      thế, giữ nguyên nội dung gốc — không xáo trộn/ghép gì.
 
-  🚫 Che Logo Đối Thủ — khoanh vùng logo/chữ thương hiệu đối thủ ở 1 khung
+  Logo Cover — khoanh vùng logo/chữ thương hiệu đối thủ ở 1 khung
      hình, tool tự bám theo (object tracking) và vẽ đè logo của bạn lên
      đúng vị trí trong phạm vi 1 cảnh liên tục.
 
   Cả 3 tính năng khác biệt hoàn toàn về mục đích/logic, chỉ dùng chung giao
-  diện app.
+  diện app. Tên dự án/app: "UA Solutions" (đổi từ "Video Tools" cũ) —
+  "Video Remixer" giờ chỉ là TÊN 1 TÍNH NĂNG bên trong, không còn là tên
+  chung của cả app nữa.
 """
 
 import base64
@@ -48,7 +50,7 @@ except Exception as e:  # noqa: BLE001 — cố ý bắt mọi lỗi import ở 
     logo_cover_core = None
     LOGO_COVER_IMPORT_ERROR = str(e)
 
-st.set_page_config(page_title="Video Tools", page_icon="🎬", layout="wide")
+st.set_page_config(page_title="UA Solutions", page_icon="🎬", layout="wide")
 
 # Khoá tạm tính năng "Che Logo Đối Thủ" — hiện màn hình "sắp ra mắt" thay vì
 # giao diện thật (đã build xong, chỉ đang ẩn). Đổi thành False để mở lại.
@@ -96,20 +98,31 @@ st.markdown(
     mục đang chọn, chỉ khai báo tĩnh chung ở đây). */
     section[data-testid="stSidebar"] {
         background-color: #14161b;
+        transition: width 0.28s ease, min-width 0.28s ease;
+        overflow-x: hidden;
     }
     section[data-testid="stSidebar"] * { color: #9aa0a6; }
     [class*="st-key-nav_"] button {
         display: flex; align-items: center; justify-content: flex-start !important;
         gap: 0.6rem; width: 100%; border: none !important; background: transparent;
         border-radius: 10px; padding: 0.55rem 0.8rem; margin-bottom: 2px;
-        text-align: left; font-weight: 500;
+        text-align: left; font-weight: 500; overflow: hidden;
     }
     /* KHÔNG !important ở trên — để CSS động (màu nền mục ĐANG CHỌN, xem
     _sidebar_state_css) luôn thắng được, tránh 2 luật cùng độ ưu tiên
     "đấu nhau" tuỳ thứ tự chèn vào trang (đã gặp thật: nền cam của mục đang
     chọn bị luật "trong suốt mặc định" này đè mất dù chèn SAU). */
     [class*="st-key-nav_"] button:hover { background: #1e2129 !important; }
-    [class*="st-key-nav_"] button p { text-align: left; }
+    /* white-space: nowrap + overflow: hidden — KHÔNG có 2 dòng này, lúc
+    đang chạy animation thu gọn/mở rộng (xem transition ở
+    stSidebar bên dưới), sidebar còn hẹp mà chữ nhãn đã hiện ra (display
+    đổi ngay lập tức, không đồng bộ với animation bề rộng) sẽ bị VỠ DÒNG
+    từng KÝ TỰ MỘT rất xấu trong lúc đang chuyển động (đã gặp thật) — 2
+    dòng này khiến chữ chỉ đơn giản bị ẩn bớt cho tới khi đủ chỗ, không
+    bao giờ tự xuống dòng. */
+    [class*="st-key-nav_"] button p {
+        text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip;
+    }
 
     /* Ghim khối tài khoản/đăng xuất xuống cuối thanh bên trái — neo trực
     tiếp theo chiều cao màn hình (100vh) ở đúng vùng nội dung sidebar, tránh
@@ -118,7 +131,16 @@ st.markdown(
     [data-testid="stSidebarUserContent"] {
         display: flex; flex-direction: column; min-height: 100vh;
     }
-    .st-key-sidebar_footer { margin-top: auto; }
+    /* Vùng TRÊN (thương hiệu) và vùng DƯỚI (tài khoản) — 2 khung tách biệt
+    hẳn khỏi danh sách công cụ ở giữa bằng viền + khoảng đệm riêng, xem
+    render_sidebar_nav ở cuối file. */
+    .st-key-sidebar_header {
+        padding: 0.3rem 0.2rem 0.9rem 0.2rem; margin-bottom: 0.5rem;
+        border-bottom: 1px solid #22252c;
+    }
+    .st-key-sidebar_footer {
+        margin-top: auto; padding-top: 0.7rem; border-top: 1px solid #22252c;
+    }
 
     /* Tiêu đề + dòng phụ đầu thanh bên, nút thu gọn/mở rộng (mũi tên tròn
     nhỏ, giống mẫu tham khảo) và nút "Log out" — tất cả theo tông tối. */
@@ -138,8 +160,12 @@ st.markdown(
     .st-key-logout_btn button {
         border: 1px solid #2a2d35 !important; background: transparent !important;
         color: #9aa0a6 !important; justify-content: flex-start !important; gap: 0.6rem;
+        overflow: hidden;
     }
     .st-key-logout_btn button:hover { background: #1e2129 !important; border-color: #3a3d45 !important; }
+    /* Cùng lý do với nút điều hướng — tránh chữ vỡ dòng từng ký tự lúc
+    đang chạy animation thu gọn/mở rộng. */
+    .st-key-logout_btn button p { white-space: nowrap; overflow: hidden; text-overflow: clip; }
 
     /* Chuyển mượt khi ảnh xem trước outro đổi giữa mờ (không được chọn) và
     rõ (đang chọn), thay vì đổi ngay lập tức. */
@@ -1317,17 +1343,21 @@ def _sidebar_state_css(collapsed, active_key):
 with st.sidebar:
     st.markdown(_sidebar_state_css(st.session_state.sidebar_collapsed, st.session_state.nav_page), unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-title">UA Solutions</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-subtitle">Apero internal tools</div>', unsafe_allow_html=True)
-    # Mũi tên đổi hướng theo trạng thái: đang MỞ RỘNG -> chỉ vào trong (ám
-    # chỉ bấm để thu gọn); đang THU GỌN -> chỉ ra ngoài (ám chỉ bấm để mở
-    # rộng). Không đặt trong st.columns nữa — cột hẹp dần khi thu gọn từng
-    # cắt mất nửa nút (đã gặp thật), giờ để full-width + tự canh giữa bằng
-    # CSS (xem .st-key-sidebar_toggle) nên luôn hiện trọn vẹn dù rộng hay hẹp.
-    toggle_icon = "chevron_left" if not st.session_state.sidebar_collapsed else "chevron_right"
-    if st.button("", icon=f":material/{toggle_icon}:", key="sidebar_toggle"):
-        st.session_state.sidebar_collapsed = not st.session_state.sidebar_collapsed
-        st.rerun()
+    # Vùng TRÊN (thương hiệu + nút thu gọn/mở rộng) tách biệt hẳn khỏi danh
+    # sách công cụ ở giữa — có khung riêng (viền dưới), xem .st-key-sidebar_header.
+    with st.container(key="sidebar_header"):
+        st.markdown('<div class="sidebar-title">UA Solutions</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sidebar-subtitle">Apero internal tools</div>', unsafe_allow_html=True)
+        # Mũi tên đổi hướng theo trạng thái: đang MỞ RỘNG -> chỉ vào trong
+        # (ám chỉ bấm để thu gọn); đang THU GỌN -> chỉ ra ngoài (ám chỉ bấm
+        # để mở rộng). Không đặt trong st.columns nữa — cột hẹp dần khi thu
+        # gọn từng cắt mất nửa nút (đã gặp thật), giờ để full-width + tự
+        # canh giữa bằng CSS (xem .st-key-sidebar_toggle) nên luôn hiện
+        # trọn vẹn dù rộng hay hẹp.
+        toggle_icon = "chevron_left" if not st.session_state.sidebar_collapsed else "chevron_right"
+        if st.button("", icon=f":material/{toggle_icon}:", key="sidebar_toggle"):
+            st.session_state.sidebar_collapsed = not st.session_state.sidebar_collapsed
+            st.rerun()
 
     for item in NAV_ITEMS:
         if st.button(
@@ -1337,8 +1367,9 @@ with st.sidebar:
             st.session_state.nav_page = item["key"]
             st.rerun()
 
+    # Vùng DƯỚI (tài khoản/đăng xuất) — ghim hẳn xuống cuối, tách biệt bằng
+    # viền trên, xem .st-key-sidebar_footer.
     with st.container(key="sidebar_footer"):
-        st.divider()
         st.button(
             "Log out", icon=":material/logout:", key="logout_btn", use_container_width=True,
             on_click=lambda: st.session_state.pop("authed", None),
