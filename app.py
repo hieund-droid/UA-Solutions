@@ -16,11 +16,13 @@
   diện app.
 """
 
+import io
 import random
 import re
 import shutil
 import tempfile
 import uuid
+import zipfile
 from pathlib import Path
 
 import cv2
@@ -31,6 +33,7 @@ from streamlit_cropper import st_cropper
 
 import remix_core as core
 import outro_core
+import trademark_core
 
 # Import "mềm" — nếu logo_cover_core lỗi (vd thư viện tracking khác nhau
 # giữa các máy/hệ điều hành, như đã từng gặp), tab "Video Remixer" và
@@ -273,12 +276,28 @@ def apply_output_naming(paths, prefix):
     return renamed
 
 
-def render_results_grid(paths, download_key_prefix, cols_per_row=3):
+def render_results_grid(paths, download_key_prefix, cols_per_row=4):
     """Hiển thị các video kết quả dạng lưới (thay vì xếp chồng dọc) — tận
-    dụng bố cục rộng, dễ xem/tải nhiều video cùng lúc hơn."""
+    dụng bố cục rộng, dễ xem/tải nhiều video cùng lúc hơn. Có nút tải hết
+    1 lần (nén thành .zip) bên cạnh nút tải từng video riêng."""
     existing = [p for p in paths if p.exists()]
     if not existing:
         return
+
+    if len(existing) > 1:
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_STORED) as zf:
+            for out_path in existing:
+                zf.write(out_path, arcname=out_path.name)
+        st.download_button(
+            f"⬇️ Download All ({len(existing)} video, .zip)",
+            data=zip_buf.getvalue(),
+            file_name="ket_qua.zip",
+            mime="application/zip",
+            key=f"{download_key_prefix}_zip_all",
+            type="primary",
+        )
+
     cols = st.columns(cols_per_row)
     for i, out_path in enumerate(existing):
         with cols[i % cols_per_row]:
@@ -715,6 +734,36 @@ def render_outro_swap():
         )
         strip_audio = st.checkbox("Bỏ âm thanh trong video kết quả", key="outro_strip_audio")
 
+    with st.expander("🏷️ Thêm trademark bay ziczac vào video kết quả (tuỳ chọn)"):
+        add_trademark = st.checkbox("Gắn trademark của tôi vào video kết quả", key="outro_add_trademark")
+        trademark_kind = trademark_text = None
+        trademark_logo_file = None
+        trademark_opacity = trademark_size = trademark_speed = None
+        if add_trademark:
+            trademark_kind = st.radio(
+                "Loại trademark", ["Chữ", "Logo/hình ảnh"], key="outro_trademark_kind", horizontal=True,
+            )
+            if trademark_kind == "Chữ":
+                trademark_text = st.text_input("Nội dung chữ", key="outro_trademark_text")
+            else:
+                trademark_logo_file = st.file_uploader(
+                    "Ảnh logo (khuyến khích PNG nền trong suốt)", type=["png", "jpg", "jpeg"],
+                    key="outro_trademark_logo",
+                )
+            trademark_opacity = st.slider("Độ mờ (%)", 10, 100, 70, key="outro_trademark_opacity")
+            trademark_size = st.slider(
+                "Độ lớn (% chiều rộng video)", 5, 40, 15, key="outro_trademark_size",
+            )
+            trademark_speed = st.slider(
+                "Tốc độ bay", 30, 400, 150, key="outro_trademark_speed",
+                help="Số nhỏ = bay chậm, số lớn = bay nhanh.",
+            )
+            st.caption(
+                "⚠️ Đường bay đi KHẮP khung hình (theo yêu cầu), nên có lúc sẽ đi "
+                "qua vùng giữa (thường là chủ thể chính) — không có cách tự nhận "
+                "diện nội dung để tránh 100%. Giảm độ mờ/độ lớn nếu muốn hạn chế che."
+            )
+
     output_name = st.text_input(
         "Đặt tên file xuất ra (tuỳ chọn)",
         placeholder="vd: hieund.apero → hieund.apero.1, hieund.apero.2, ...",
@@ -757,6 +806,30 @@ def render_outro_swap():
                     tail_match_threshold=match_threshold, on_source=on_source,
                     max_workers=int(max_workers),
                 )
+
+                trademark_ready = add_trademark and (
+                    (trademark_kind == "Chữ" and trademark_text and trademark_text.strip())
+                    or (trademark_kind == "Logo/hình ảnh" and trademark_logo_file is not None)
+                )
+                if add_trademark and not trademark_ready:
+                    status.write("⚠️ Chưa nhập chữ/chưa chọn logo trademark — bỏ qua bước gắn trademark.")
+                elif trademark_ready:
+                    status.write("Đang gắn trademark bay ziczac lên từng video...")
+                    if trademark_kind == "Chữ":
+                        overlay_rgba = trademark_core.render_text_overlay(trademark_text.strip())
+                    else:
+                        logo_path = workdir / f"trademark_logo_{uuid.uuid4().hex[:8]}{Path(trademark_logo_file.name).suffix}"
+                        logo_path.write_bytes(trademark_logo_file.getvalue())
+                        overlay_rgba = trademark_core.load_logo_overlay(logo_path)
+                    for r in made:
+                        tm_path = r["path"].parent / f"{r['path'].stem}_tm{r['path'].suffix}"
+                        trademark_core.apply_trademark(
+                            r["path"], overlay_rgba, tm_path, workdir,
+                            opacity=trademark_opacity / 100, size_percent=trademark_size,
+                            speed_px_per_sec=trademark_speed,
+                        )
+                        r["path"].unlink(missing_ok=True)
+                        r["path"] = tm_path
 
                 new_paths = apply_output_naming([r["path"] for r in made], output_name)
                 for r, new_p in zip(made, new_paths):
