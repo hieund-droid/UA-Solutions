@@ -766,7 +766,7 @@ def render_outro_swap():
         add_trademark = st.checkbox("Gắn trademark của tôi vào video kết quả", key="outro_add_trademark")
         trademark_kind = trademark_text = None
         trademark_logo_file = None
-        trademark_opacity = trademark_size = trademark_speed = None
+        trademark_opacity = trademark_size = trademark_speed = trademark_range = None
         trademark_font_style = "Đậm"
         trademark_text_color = "#FFFFFF"
         trademark_stroke_color = "#000000"
@@ -807,8 +807,18 @@ def render_outro_swap():
                     "Kiểu bay", trademark_core.PATH_STYLES, key="outro_trademark_path_style",
                     help=(
                         "Zigzag: nảy khắp khung hình kiểu logo DVD. "
-                        "Vòng tròn: quay theo hình tròn, tốc độ tự dao động "
-                        "nhanh/chậm liên tục kiểu tàu lượn siêu tốc."
+                        "Vòng tròn: bay theo hình ELIP quanh tâm video (tự xoay "
+                        "mặt hướng vào tâm khi bay), tốc độ tự dao động nhanh/"
+                        "chậm liên tục kiểu tàu lượn siêu tốc."
+                    ),
+                )
+                trademark_range = st.slider(
+                    "Phạm vi bay (% vùng khả dụng)", 20, 100, 100, key="outro_trademark_range",
+                    help=(
+                        "Trademark được bay quanh trong 1 vùng lớn bằng bao "
+                        "nhiêu % khung hình, luôn tính từ CHÍNH GIỮA video. "
+                        "100% = bay sát hết phạm vi có thể, nhỏ hơn = thu hẹp "
+                        "lại gần giữa hơn."
                     ),
                 )
                 st.caption(
@@ -849,6 +859,7 @@ def render_outro_swap():
                             sample_frame, preview_overlay,
                             opacity=trademark_opacity / 100, size_percent=trademark_size,
                             speed_px_per_sec=trademark_speed, path_style=trademark_path_style,
+                            range_percent=trademark_range,
                         )
                         # Dùng thẻ <img> nhúng trực tiếp (base64) thay vì
                         # st.image() — st.image() có thể chỉ hiện khung hình
@@ -945,7 +956,7 @@ def render_outro_swap():
                             r["path"], overlay_rgba, tm_path, workdir,
                             opacity=trademark_opacity / 100, size_percent=trademark_size,
                             speed_px_per_sec=trademark_speed, path_style=trademark_path_style,
-                            skip_after_seconds=skip_after,
+                            skip_after_seconds=skip_after, range_percent=trademark_range,
                         )
                         r["path"].unlink(missing_ok=True)
                         r["path"] = tm_path

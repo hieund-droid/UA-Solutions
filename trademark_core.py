@@ -121,31 +121,76 @@ def _zigzag_position(t_seconds, max_x, max_y, speed_px_per_sec):
     return int(x), int(y)
 
 
-def _circular_position(t_seconds, max_x, max_y, speed_px_per_sec):
-    """Vị trí (x, y) bay theo đường TRÒN, nhưng tốc độ góc DAO ĐỘNG nhanh/
-    chậm theo thời gian (kiểu tàu lượn siêu tốc) thay vì quay đều — vẫn
-    dùng cùng 1 thanh trượt "Tốc độ bay" (đổi ra tốc độ góc dựa theo bán
-    kính) để người dùng không cần học thêm khái niệm mới cho từng kiểu bay."""
+def _ellipse_topleft_and_rotation(t_seconds, max_x, max_y, speed_px_per_sec, range_scale):
+    """Vị trí góc trên-trái (x, y) + góc xoay (độ) khi bay theo đường ELIP
+    có TÂM là chính giữa khung hình, 2 bán kính riêng theo chiều ngang/dọc
+    (đúng tỉ lệ khung hình — không còn ép về hình tròn theo cạnh ngắn hơn).
+    Tốc độ góc DAO ĐỘNG nhanh/chậm theo thời gian (kiểu tàu lượn siêu tốc)
+    thay vì quay đều.
+
+    range_scale (0..1): thu nhỏ 2 bán kính quanh đúng tâm — 1.0 = bay sát
+    hết phạm vi khả dụng (như trước), nhỏ hơn = bay quanh 1 vùng hẹp hơn,
+    gần tâm hơn.
+
+    Góc xoay trả về khiến trademark tự "xoay mặt" theo — cạnh dưới (khi
+    chưa xoay) luôn là cạnh gần tâm elip nhất trong suốt hành trình, giống
+    kim đồng hồ luôn chỉ vào tâm."""
     cx, cy = max_x / 2, max_y / 2
-    radius = max(min(cx, cy), 1.0)
-    base_omega = speed_px_per_sec / radius  # rad/giay, uoc luong tu toc do (px/s)
+    rx = max(cx * range_scale, 1.0)
+    ry = max(cy * range_scale, 1.0)
+    avg_r = (rx + ry) / 2
+    base_omega = speed_px_per_sec / avg_r  # rad/giay, uoc luong tu toc do (px/s)
     wobble_amp = 0.85  # do dao dong toc do quanh muc co ban (khong qua 1 de luon quay cung chieu)
     wobble_freq = 1.3  # tan so dao dong nhanh/cham — mot vong nhanh/cham hoan chinh
     # roi vao khoang vai giay (tuy toc do), du ngan de thay ro trong ca
     # video xem truoc (vai giay) va video thuc te.
     theta = base_omega * t_seconds + wobble_amp * math.sin(base_omega * wobble_freq * t_seconds)
-    x = cx + radius * math.cos(theta)
-    y = cy + radius * math.sin(theta)
-    return int(x), int(y)
+    x = cx + rx * math.cos(theta)
+    y = cy + ry * math.sin(theta)
+    rotation_deg = math.degrees(theta) + 90.0
+    return x, y, rotation_deg
 
 
 PATH_STYLES = ["Zigzag", "Vòng tròn (tốc độ đổi)"]
 
 
-def _compute_position(t_seconds, max_x, max_y, speed_px_per_sec, path_style):
+def _compute_position(t_seconds, max_x, max_y, speed_px_per_sec, path_style, range_percent=100.0):
+    """Trả về (x, y, rotation_deg) — góc trên-trái để dán overlay CHƯA xoay,
+    và góc cần xoay overlay trước khi dán (0 = không xoay, dùng cho Zigzag).
+
+    range_percent (0..100): phạm vi hoạt động — % của vùng khả dụng
+    (max_x, max_y) mà trademark được phép di chuyển trong đó, LUÔN thu nhỏ
+    quanh đúng tâm (không dồn về góc nào)."""
+    scale = max(0.05, min(range_percent / 100.0, 1.0))
+
     if path_style == "Vòng tròn (tốc độ đổi)":
-        return _circular_position(t_seconds, max_x, max_y, speed_px_per_sec)
-    return _zigzag_position(t_seconds, max_x, max_y, speed_px_per_sec)
+        x, y, rot = _ellipse_topleft_and_rotation(t_seconds, max_x, max_y, speed_px_per_sec, scale)
+        return int(x), int(y), rot
+
+    # Zigzag: thu hẹp trục nảy rồi dịch ra CHÍNH GIỮA vùng khả dụng — nếu
+    # không dịch, thu nhỏ sẽ dồn đường bay về góc trên-trái thay vì quanh tâm.
+    bounce_max_x = max_x * scale
+    bounce_max_y = max_y * scale
+    offset_x = (max_x - bounce_max_x) / 2
+    offset_y = (max_y - bounce_max_y) / 2
+    x, y = _zigzag_position(t_seconds, bounce_max_x, bounce_max_y, speed_px_per_sec)
+    return int(x + offset_x), int(y + offset_y), 0.0
+
+
+def _rotate_rgba(overlay_rgba, angle_deg):
+    """Xoay ảnh RGBA quanh đúng tâm của nó, tự nới khung chứa đủ lớn (theo
+    đường chéo) để không bị cắt góc khi xoay — phần nới thêm để trong suốt."""
+    h, w = overlay_rgba.shape[:2]
+    diag = int(math.ceil(math.hypot(w, h))) + 1
+    canvas = np.zeros((diag, diag, 4), dtype=np.uint8)
+    y0, x0 = (diag - h) // 2, (diag - w) // 2
+    canvas[y0:y0 + h, x0:x0 + w] = overlay_rgba
+    center = (diag / 2, diag / 2)
+    matrix = cv2.getRotationMatrix2D(center, -angle_deg, 1.0)
+    return cv2.warpAffine(
+        canvas, matrix, (diag, diag),
+        flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0),
+    )
 
 
 def _blend_overlay_at(frame_bgr, overlay_rgba, x, y):
@@ -168,9 +213,25 @@ def _blend_overlay_at(frame_bgr, overlay_rgba, x, y):
     return frame_bgr
 
 
+def _blend_overlay_rotated(frame_bgr, overlay_rgba, x_topleft, y_topleft, overlay_w, overlay_h, rotation_deg):
+    """Như _blend_overlay_at, nhưng nếu rotation_deg != 0 thì xoay overlay
+    quanh TÂM của nó trước, rồi dán sao cho tâm ảnh (đã xoay) vẫn nằm đúng
+    tại điểm tâm đã tính (x_topleft/y_topleft là góc trên-trái của overlay
+    CHƯA xoay, dùng để suy ra điểm tâm)."""
+    if abs(rotation_deg) < 0.01:
+        return _blend_overlay_at(frame_bgr, overlay_rgba, x_topleft, y_topleft)
+    center_x = x_topleft + overlay_w / 2
+    center_y = y_topleft + overlay_h / 2
+    rotated = _rotate_rgba(overlay_rgba, rotation_deg)
+    rh, rw = rotated.shape[:2]
+    new_x = int(round(center_x - rw / 2))
+    new_y = int(round(center_y - rh / 2))
+    return _blend_overlay_at(frame_bgr, rotated, new_x, new_y)
+
+
 def apply_trademark(video_path, overlay_rgba, out_path, workdir,
                      opacity=0.7, size_percent=15, speed_px_per_sec=120,
-                     path_style="Zigzag", skip_after_seconds=None):
+                     path_style="Zigzag", skip_after_seconds=None, range_percent=100.0):
     """Gắn `overlay_rgba` (chữ hoặc logo, xem render_text_overlay /
     load_logo_overlay) lên `video_path`, bay theo đường (xem PATH_STYLES),
     xuất ra `out_path`.
@@ -179,8 +240,11 @@ def apply_trademark(video_path, overlay_rgba, out_path, workdir,
     - size_percent: kích thước trademark tính theo % chiều rộng video.
     - speed_px_per_sec: tốc độ bay (pixel/giây).
     - path_style: 1 trong PATH_STYLES — "Zigzag" (nảy khắp khung hình) hoặc
-      "Vòng tròn (tốc độ đổi)" (quay tròn, tốc độ dao động nhanh/chậm kiểu
-      tàu lượn siêu tốc thay vì quay đều).
+      "Vòng tròn (tốc độ đổi)" (bay theo hình ELIP tâm giữa khung hình, tốc
+      độ dao động nhanh/chậm kiểu tàu lượn siêu tốc thay vì quay đều — và
+      TỰ XOAY theo, cạnh dưới của trademark luôn hướng vào tâm elip).
+    - range_percent: 0..100 — phạm vi hoạt động (% vùng khả dụng), thu nhỏ
+      quanh đúng tâm khung hình. 100 = bay sát hết phạm vi có thể.
     - skip_after_seconds: nếu có, KHÔNG gắn trademark từ giây này tới hết
       video — dùng khi video đã có sẵn 1 đoạn outro riêng gắn ở cuối (vd
       tab "Cắt & Gắn Outro") và không muốn trademark bay đè lên đoạn đó.
@@ -188,7 +252,8 @@ def apply_trademark(video_path, overlay_rgba, out_path, workdir,
     LƯU Ý: trong phạm vi được gắn, đường bay đi khắp khung hình, không
     tránh vùng giữa (chủ thể chính) — không có cách nhận diện nội dung để
     tự tránh (xem logo_cover_core.py để biết vì sao việc này không khả thi
-    tự động). Giảm size_percent/opacity để hạn chế mức che nếu cần."""
+    tự động). Giảm size_percent/opacity hoặc range_percent để hạn chế mức
+    che nếu cần."""
     workdir = Path(workdir)
     info = ffprobe_info(video_path)
     fps = info["fps"] or 30
@@ -231,8 +296,8 @@ def apply_trademark(video_path, overlay_rgba, out_path, workdir,
                 break
             t = frame_idx / fps
             if skip_after_seconds is None or t < skip_after_seconds:
-                x, y = _compute_position(t, max_x, max_y, speed_px_per_sec, path_style)
-                frame = _blend_overlay_at(frame, overlay, x, y)
+                x, y, rot = _compute_position(t, max_x, max_y, speed_px_per_sec, path_style, range_percent)
+                frame = _blend_overlay_rotated(frame, overlay, x, y, overlay_w, overlay_h, rot)
             proc.stdin.write(frame.tobytes())
             frame_idx += 1
         cap.release()
@@ -247,7 +312,7 @@ def apply_trademark(video_path, overlay_rgba, out_path, workdir,
 
 
 def generate_preview_animation(sample_frame_bgr, overlay_rgba, opacity=0.7, size_percent=15,
-                                speed_px_per_sec=150, path_style="Zigzag",
+                                speed_px_per_sec=150, path_style="Zigzag", range_percent=100.0,
                                 duration_sec=3.0, fps=8, preview_width=220):
     """Sinh 1 ảnh ĐỘNG nhỏ, NHANH (không dùng ffmpeg, chỉ vài khung hình độ
     phân giải thấp) để xem trước ngay khi chỉnh độ mờ/độ lớn/tốc độ — không
@@ -273,8 +338,8 @@ def generate_preview_animation(sample_frame_bgr, overlay_rgba, opacity=0.7, size
     frames = []
     for i in range(int(duration_sec * fps)):
         t = i / fps
-        x, y = _compute_position(t, max_x, max_y, speed_px_per_sec, path_style)
-        frame = _blend_overlay_at(small_frame.copy(), overlay, x, y)
+        x, y, rot = _compute_position(t, max_x, max_y, speed_px_per_sec, path_style, range_percent)
+        frame = _blend_overlay_rotated(small_frame.copy(), overlay, x, y, overlay_w, overlay_h, rot)
         frames.append(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
 
     buf = io.BytesIO()
