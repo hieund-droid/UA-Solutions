@@ -816,6 +816,22 @@ def render_outro_swap():
     )
     has_files = bool(uploaded_files)
 
+    # Máy chủ miễn phí RAM rất hạn chế — tải quá nhiều video nặng cùng lúc
+    # (vd 10+ video vài phút/video) dễ làm app crash giữa chừng (đã gặp
+    # thật). Chặn sớm ở đây thay vì để chạy rồi mới crash lúc đang xử lý,
+    # mất công người dùng chờ. 400MB là mức ước lượng an toàn cho gói miễn
+    # phí (~1GB RAM) — còn chừa RAM cho bản thân app + ffmpeg xử lý.
+    OUTRO_BATCH_SIZE_LIMIT_MB = 400
+    total_upload_mb = sum(f.size for f in uploaded_files) / (1024 * 1024) if uploaded_files else 0
+    batch_too_big = total_upload_mb > OUTRO_BATCH_SIZE_LIMIT_MB
+    if batch_too_big:
+        st.error(
+            f"⚠️ {len(uploaded_files)} video đang tải lên nặng tổng cộng ~{total_upload_mb:.0f}MB, "
+            f"vượt mức an toàn {OUTRO_BATCH_SIZE_LIMIT_MB}MB cho máy chủ miễn phí hiện dùng — dễ "
+            "crash giữa chừng khi xử lý. Hãy bớt video hoặc chia làm nhiều đợt nhỏ hơn (vd 3-5 "
+            "video/lần) rồi chạy lần lượt."
+        )
+
     if has_files or st.session_state.outro_outputs:
         if st.button("🗑️ Xoá hết video & làm mẻ mới", key="outro_clear_batch"):
             st.session_state.outro_uploader_version += 1
@@ -987,7 +1003,7 @@ def render_outro_swap():
         help="Để trống thì dùng tên tự động.",
     )
 
-    run_clicked = st.button("Xử lý", type="primary", disabled=not has_files)
+    run_clicked = st.button("Xử lý", type="primary", disabled=not has_files or batch_too_big)
 
     if run_clicked and has_files:
         st.session_state.outro_outputs = []
