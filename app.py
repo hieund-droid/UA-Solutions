@@ -26,6 +26,7 @@ import shutil
 import tempfile
 import uuid
 import zipfile
+from datetime import date
 from pathlib import Path
 
 import cv2
@@ -37,6 +38,7 @@ from streamlit_cropper import st_cropper
 import remix_core as core
 import outro_core
 import trademark_core
+import events_data
 
 # Import "mềm" — nếu logo_cover_core lỗi (vd thư viện tracking khác nhau
 # giữa các máy/hệ điều hành, như đã từng gặp), tab "Video Remixer" và
@@ -1444,6 +1446,70 @@ def render_logo_cover():
         render_results_grid([r["out_path"]], "cover_dl")
 
 
+def render_events():
+    """Trang 'Events' — liệt kê ngày lễ/sự kiện SẮP TỚI theo quốc gia, để
+    team UA biết trước mà chuẩn bị ads (đổi outro theo mùa, tăng ngân sách
+    trước Black Friday...). Mỗi mục có nguồn kiểm chứng riêng (xem
+    events_data.py) — KHÔNG tự bịa ngày theo trí nhớ khi thêm dữ liệu mới."""
+    st.title(":material/event: Events")
+    st.caption("Ngày lễ/sự kiện sắp tới theo từng quốc gia — mỗi mục đều có nguồn kiểm chứng kèm theo.")
+
+    filt1, filt2, filt3 = st.columns(3)
+    with filt1:
+        tier_choice = st.multiselect(
+            "Tier", [1, 2], default=[1, 2], format_func=lambda t: f"Tier {t}",
+            key="events_tier_filter",
+            help="Tier 1: các nước UA hay chạy (US, UK, Canada, Úc, Đức, Pháp, Nhật, Hàn). "
+                 "Tier 2: India, Brazil, Mexico, Indonesia, Philippines.",
+        )
+    with filt2:
+        country_choice = st.multiselect(
+            "Quốc gia (để trống = tất cả)", list(events_data.COUNTRIES.keys()),
+            key="events_country_filter",
+        )
+    with filt3:
+        category_choice = st.multiselect(
+            "Loại (để trống = tất cả)", list(events_data.CATEGORY_LABELS.keys()),
+            format_func=lambda c: events_data.CATEGORY_LABELS[c], key="events_category_filter",
+        )
+
+    rows = events_data.upcoming_events(
+        countries=country_choice or None,
+        tiers=tier_choice or None,
+        categories=category_choice or None,
+        limit=60,
+    )
+
+    stale = [ev for ev in events_data.EVENTS if events_data.needs_update(ev, date.today())]
+    if stale:
+        st.warning(
+            f"⚠️ {len(stale)} sự kiện âm lịch/tôn giáo đã qua ngày lưu sẵn, cần vào cập nhật lại "
+            "ngày kỳ tới (xem events_data.py) — tạm ẩn khỏi danh sách dưới đây: "
+            + ", ".join(f"{ev['name']} ({ev['country']})" for ev in stale)
+        )
+
+    if not rows:
+        st.info("Không có sự kiện nào khớp bộ lọc đang chọn.")
+        return
+
+    today = date.today()
+    for d, ev in rows:
+        days_left = (d - today).days
+        country_name, _ = events_data.COUNTRIES.get(ev["country"], (ev["country"], None))
+        with st.container(border=True):
+            info_col, days_col = st.columns([4, 1])
+            with info_col:
+                title = ev["name"] + (f" ({ev['local_name']})" if ev.get("local_name") else "")
+                st.markdown(f"**{title}** — {country_name}")
+                st.caption(
+                    f"{events_data.CATEGORY_LABELS[ev['category']]} · {d.strftime('%d/%m/%Y')}"
+                    + (f" · {ev['note']}" if ev.get("note") else "")
+                )
+                st.caption(f"🔗 Nguồn: {ev['source']}")
+            with days_col:
+                st.markdown(f"**{'Hôm nay!' if days_left == 0 else f'còn {days_left} ngày'}**")
+
+
 check_ffmpeg()
 
 # Danh sách công cụ hiện trên thanh menu bên trái — thêm công cụ mới sau này
@@ -1471,6 +1537,7 @@ NAV_ITEMS = [
     },
     {"key": "remix", "label": "Video Remixer", "icon": "shuffle", "fn": render_video_remixer},
     {"key": "logocover", "label": "Logo Cover", "icon": "shield", "fn": render_logo_cover},
+    {"key": "events", "label": "Events", "icon": "event", "fn": render_events},
 ]
 
 
@@ -1549,25 +1616,40 @@ def _sidebar_state_css(collapsed, active_key, expanded_groups):
                 )
             else:
                 rules.append(f'{child_cls} span[data-testid="stIconMaterial"] {{ color: #9aa0a6; }}')
-            # Đóng/mở mục con MƯỢT bằng max-height + opacity thay vì
+
+        if children:
+            # Đóng/mở CẢ NHÓM con MƯỢT bằng max-height + opacity thay vì
             # display:none bật/tắt đột ngột (đã gặp phản hồi thật: "dropdown
-            # không mượt") — khai bao transition CÙNG lúc với state hiện tại
-            # trong 1 luật, để mỗi lần render lại <style> trình duyệt vẫn
-            # nhận ra đây là 1 thay đổi giá trị cần nội suy động, không phải
-            # 1 rule hoàn toàn mới. margin về 0 khi ẩn để không để lại
-            # khoảng trống thừa giữa các nút.
-            show_child = not collapsed and item["key"] in expanded_groups
-            rules.append(
-                f'{wrapper_cls} {{ transition: max-height 0.22s ease, opacity 0.16s ease, '
-                f'margin 0.22s ease; overflow: hidden; }}'
-            )
-            if show_child:
-                rules.append(f'{wrapper_cls} {{ max-height: 52px; opacity: 1; }}')
+            # không mượt"). Nhóm giờ là 1 container DUY NHẤT bọc cả 3 nút
+            # con (xem vòng lặp render bên dưới) — Streamlit tự chèn "gap"
+            # giữa MỌI phần tử liền kề trong 1 khối dọc dù phần tử đó đã ẩn
+            # hết bằng max-height:0 (đã gặp thật: đóng nhóm vẫn hở 1 khoảng
+            # ở giữa) — gộp còn 1 container thì chỉ còn ĐÚNG 1 khoảng gap
+            # (trước + sau) cần triệt tiêu bằng margin âm khi đóng.
+            group_wrapper_cls = f'.st-key-nav_children_{item["key"]}'
+            # QUAN TRỌNG: Streamlit bọc container này trong 1 lớp trung gian
+            # [data-testid="stLayoutWrapper"] (không tự đặt class riêng theo
+            # key được — dùng chung 1 class phát sinh cho MỌI wrapper trên
+            # trang, không target trực tiếp bằng key được). Khoảng cách 34px
+            # thừa hoá ra không phải do wrapper này mà do khoảng "gap: 16px"
+            # cha (.stVerticalBlock chứa cả 2 nút cha/con) TỰ CHÈN giữa MỌI
+            # phần tử con trực tiếp — kể cả phần tử đã co về 0 chiều cao,
+            # CHỈ khi phần tử đó bị đưa ra khỏi luồng (position:absolute)
+            # thì mới không bị tính vào gap nữa. Đã thử margin âm trên chính
+            # container của mình trước — KHÔNG ăn thua, vì margin không đụng
+            # được vào cơ chế gap của cha. Phải ép position:absolute cho
+            # ĐÚNG stLayoutWrapper (phần tử flex thật sự, không phải div bên
+            # trong nó) — dùng :has() để chọn đúng wrapper NÀY (không phải
+            # mọi wrapper khác trên trang).
+            outer_wrapper_selector = f'[data-testid="stLayoutWrapper"]:has(> {group_wrapper_cls})'
+            rules.append(f'{group_wrapper_cls} {{ transition: opacity 0.16s ease; overflow: hidden; }}')
+            show_group = not collapsed and item["key"] in expanded_groups
+            if show_group:
+                rules.append(f'{outer_wrapper_selector} {{ position: static; }}')
+                rules.append(f'{group_wrapper_cls} {{ max-height: 160px; opacity: 1; }}')
             else:
-                rules.append(
-                    f'{wrapper_cls} {{ max-height: 0px; opacity: 0; margin-top: 0 !important; '
-                    f'margin-bottom: 0 !important; pointer-events: none; }}'
-                )
+                rules.append(f'{outer_wrapper_selector} {{ position: absolute; }}')
+                rules.append(f'{group_wrapper_cls} {{ max-height: 0px; opacity: 0; pointer-events: none; }}')
     return "<style>" + "\n".join(rules) + "</style>"
 
 
@@ -1627,13 +1709,21 @@ with st.sidebar:
                 st.session_state.sidebar_group_expanded.add(item["key"])
             st.rerun()
 
-        for child in children:
-            if st.button(
-                child["label"], icon=f":material/{child['icon']}:", key=f"nav_{child['key']}",
-                use_container_width=True,
-            ):
-                st.session_state.nav_page = child["key"]
-                st.rerun()
+        # Gộp CẢ 3 nút con vào 1 container DUY NHẤT (thay vì để rời từng
+        # nút) — Streamlit tự chèn "gap" (khoảng cách) giữa MỌI phần tử kề
+        # nhau trong 1 khối dọc, kể cả phần tử đã ẩn hết bằng max-height:0
+        # (đã gặp thật: đóng nhóm lại vẫn còn hở 1 khoảng ở giữa, vì trước
+        # đây mỗi nút con là 1 phần tử riêng nên CỘNG DỒN 3-4 khoảng gap lại
+        # — gộp chung 1 container thì chỉ còn ĐÚNG 1 khoảng gap phải xử lý
+        # (xem CSS `.st-key-nav_children_...` trong _sidebar_state_css).
+        with st.container(key=f"nav_children_{item['key']}"):
+            for child in children:
+                if st.button(
+                    child["label"], icon=f":material/{child['icon']}:", key=f"nav_{child['key']}",
+                    use_container_width=True,
+                ):
+                    st.session_state.nav_page = child["key"]
+                    st.rerun()
 
     # Vùng DƯỚI (tài khoản/đăng xuất) — ghim hẳn xuống cuối, tách biệt bằng
     # viền trên, xem .st-key-sidebar_footer.
