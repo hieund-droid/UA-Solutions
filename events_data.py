@@ -48,6 +48,14 @@ CATEGORY_LABELS = {
     "official": "Lễ chính thức", "shopping": "Sự kiện mua sắm", "unofficial": "Không chính thức",
 }
 
+# Cờ quốc gia — chỉ để hiển thị cho dễ quét nhanh bằng mắt, không ảnh hưởng
+# logic lọc/tính ngày.
+COUNTRY_FLAGS = {
+    "US": "🇺🇸", "UK": "🇬🇧", "Canada": "🇨🇦", "Australia": "🇦🇺", "Germany": "🇩🇪",
+    "France": "🇫🇷", "Japan": "🇯🇵", "South Korea": "🇰🇷", "India": "🇮🇳", "Brazil": "🇧🇷",
+    "Mexico": "🇲🇽", "Indonesia": "🇮🇩", "Philippines": "🇵🇭",
+}
+
 # Dữ liệu bên dưới lấy từ đợt nghiên cứu qua web thật (2026-08-26) — mỗi
 # mục có "source" là link đã thực sự tra cứu được, không suy đoán theo trí
 # nhớ. Chi tiết đầy đủ (kể cả các mục KHÔNG đưa vào vì chưa đủ tin cậy) đã
@@ -701,12 +709,19 @@ def needs_update(event, today):
     return event["date_type"] == "explicit" and date.fromisoformat(event["date"]) < today
 
 
-def upcoming_events(today=None, countries=None, tiers=None, categories=None, limit=None):
+def upcoming_events(today=None, countries=None, tiers=None, categories=None, limit=None, until=None):
     """Danh sách sự kiện sắp tới, sắp xếp theo ngày gần nhất — lọc được
     theo quốc gia/tier/loại. `today` mặc định là hôm nay thật (truyền vào
-    khi cần test với 1 ngày cố định)."""
+    khi cần test với 1 ngày cố định). `until`: chỉ lấy sự kiện TỚI ngày này
+    (bao gồm) — mặc định = hết năm hiện tại (31/12), vì dữ liệu chỉ có ý
+    nghĩa chắc chắn trong năm đang chạy (xem docstring EVENTS/needs_update
+    — nhiều mục âm lịch/tôn giáo phải cập nhật lại MỖI NĂM, đoán xa hơn 1
+    năm dễ sai). Ưu tiên chắc chắn trong phạm vi gần hơn là dàn trải xa mà
+    thiếu chính xác."""
     if today is None:
         today = date.today()
+    if until is None:
+        until = date(today.year, 12, 31)
     rows = []
     for ev in EVENTS:
         if countries and ev["country"] not in countries:
@@ -716,7 +731,7 @@ def upcoming_events(today=None, countries=None, tiers=None, categories=None, lim
         if categories and ev["category"] not in categories:
             continue
         d = next_occurrence(ev, today)
-        if d is None:
+        if d is None or d > until:
             continue
         rows.append((d, ev))
     rows.sort(key=lambda r: r[0])

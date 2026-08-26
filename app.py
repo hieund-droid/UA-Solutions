@@ -780,81 +780,6 @@ def render_outro_swap(mode="full"):
 
     user_id = st.session_state.get("user_id", "unknown")
 
-    # Thư viện "Outro của tôi" (chọn outro để GẮN VÀO cuối) chỉ có ý nghĩa ở
-    # chế độ "full" — chế độ "cut" không gắn gì thêm, chế độ "trademark"
-    # không đụng gì tới outro cả.
-    if mode == "full":
-        with st.expander("⚙️ Outro của tôi"):
-            for category in OUTRO_CATEGORY_SLUGS:
-                st.markdown(f"**{category}**")
-
-                shared_existing = _list_outros(category, "shared")
-                if shared_existing:
-                    st.caption("Dùng chung (cả team, chỉ xem — không sửa/xoá được ở đây)")
-                    cols = st.columns(4)
-                    for idx, f in enumerate(shared_existing):
-                        with cols[idx % 4]:
-                            st.video(str(f))
-                            dur = _outro_duration(str(f), f.stat().st_mtime)
-                            st.caption(f"{f.stem} · {dur:.1f}s")
-
-                st.caption("Của tôi (chỉ mình bạn thấy)")
-                mine_dir = _outro_dir_for(category, "mine", user_id)
-                mine_existing = _list_outros(category, "mine", user_id)
-
-                if mine_existing:
-                    cols = st.columns(4)
-                    for idx, f in enumerate(mine_existing):
-                        with cols[idx % 4]:
-                            # Mục quản lý xem lại được toàn bộ video (đúng chất
-                            # lượng gốc), KHÁC với ảnh nhỏ ở mục tích chọn bên
-                            # dưới (cố tình thu nhỏ để thao tác nhanh, không lag).
-                            st.video(str(f))
-                            dur = _outro_duration(str(f), f.stat().st_mtime)
-                            st.caption(f"{dur:.1f}s")
-                            new_name = st.text_input(
-                                "Tên", value=f.stem, key=f"rename_outro_{category}_{f.name}",
-                                label_visibility="collapsed",
-                            )
-                            rcol, dcol = st.columns(2)
-                            if rcol.button("✏️ Đổi tên", key=f"rename_btn_{category}_{f.name}", use_container_width=True):
-                                clean_name = _sanitize_name_prefix(new_name)
-                                if not clean_name:
-                                    st.error("Tên không được để trống.")
-                                elif clean_name == f.stem:
-                                    st.info("Tên không đổi.")
-                                else:
-                                    new_path = f.parent / f"{clean_name}{f.suffix}"
-                                    if new_path.exists():
-                                        st.error(f"Đã có outro tên '{clean_name}' rồi, chọn tên khác.")
-                                    else:
-                                        f.rename(new_path)
-                                        st.rerun()
-                            if dcol.button("🗑️ Xoá", key=f"del_outro_{category}_{f.name}", use_container_width=True):
-                                f.unlink(missing_ok=True)
-                                st.rerun()
-                else:
-                    st.caption("Chưa có outro riêng nào — thêm ở ô bên dưới.")
-
-                new_files = st.file_uploader(
-                    f"Thêm outro riêng cho {category}",
-                    type=["mp4", "mov", "mkv"], accept_multiple_files=True,
-                    key=f"outro_upload_multi_{category}",
-                )
-                if new_files:
-                    # File tải lên vẫn còn "dính" trong ô upload ở MỌI lần trang
-                    # tự load lại sau đó, nên phải nhớ đã lưu batch NÀY rồi — nếu
-                    # không, code sẽ tưởng là file mới, ghi lại + rerun() liên
-                    # tục mỗi lần trang tải lại, khiến trang cứ tự nhảy không dừng.
-                    sig = tuple((f.name, f.size) for f in new_files)
-                    if st.session_state.get(f"outro_saved_sig_{category}") != sig:
-                        for f in new_files:
-                            (mine_dir / f.name).write_bytes(f.getvalue())
-                        st.session_state[f"outro_saved_sig_{category}"] = sig
-                        st.success(f"Đã thêm {len(new_files)} outro riêng vào '{category}'.")
-                        st.rerun()
-                st.divider()
-
     uploader_label = (
         "Kéo-thả video cần gắn trademark vào đây" if mode == "trademark"
         else "Kéo-thả video đối thủ vào đây"
@@ -908,7 +833,10 @@ def render_outro_swap(mode="full"):
         )
 
         if not combined_outros:
-            st.caption(f"Chưa có outro cho '{outro_category}' — không chọn cũng được, vẫn cắt outro đối thủ bình thường.")
+            st.caption(
+                f"Chưa có outro cho '{outro_category}' — không chọn cũng được, vẫn cắt outro đối thủ "
+                "bình thường. Thêm outro mới ở trang **Personal Library** (sidebar)."
+            )
         else:
             st.write("Chọn outro muốn dùng:")
             all_uids = [f"{scope}|{f.name}" for scope, f in combined_outros]
@@ -1004,64 +932,6 @@ def render_outro_swap(mode="full"):
     trademark_path_style = trademark_core.PATH_STYLES[0]
 
     if mode != "cut":
-        # Thư viện logo — quản lý riêng (xem/đổi tên/xoá), tách khỏi phần
-        # CHỌN logo để dùng ngay bên dưới (giống cách "Outro của tôi" tách
-        # khỏi phần chọn outro để cắt/gắn).
-        mine_logo_dir = _logo_dir_for("mine", user_id)
-        with st.expander("🖼️ Logo của tôi"):
-            shared_logos = _list_logos("shared")
-            if shared_logos:
-                st.caption("Dùng chung (cả team, chỉ xem — không sửa/xoá được ở đây)")
-                cols = st.columns(4)
-                for idx, f in enumerate(shared_logos):
-                    with cols[idx % 4]:
-                        st.image(str(f), use_container_width=True)
-                        st.caption(f.stem)
-
-            st.caption("Của tôi (chỉ mình bạn thấy)")
-            mine_logos = _list_logos("mine", user_id)
-            if mine_logos:
-                cols = st.columns(4)
-                for idx, f in enumerate(mine_logos):
-                    with cols[idx % 4]:
-                        st.image(str(f), use_container_width=True)
-                        new_name = st.text_input(
-                            "Tên", value=f.stem, key=f"rename_logo_{f.name}",
-                            label_visibility="collapsed",
-                        )
-                        rcol, dcol = st.columns(2)
-                        if rcol.button("✏️ Đổi tên", key=f"rename_logo_btn_{f.name}", use_container_width=True):
-                            clean_name = _sanitize_name_prefix(new_name)
-                            if not clean_name:
-                                st.error("Tên không được để trống.")
-                            elif clean_name == f.stem:
-                                st.info("Tên không đổi.")
-                            else:
-                                new_path = f.parent / f"{clean_name}{f.suffix}"
-                                if new_path.exists():
-                                    st.error(f"Đã có logo tên '{clean_name}' rồi, chọn tên khác.")
-                                else:
-                                    f.rename(new_path)
-                                    st.rerun()
-                        if dcol.button("🗑️ Xoá", key=f"del_logo_btn_{f.name}", use_container_width=True):
-                            f.unlink(missing_ok=True)
-                            st.rerun()
-            else:
-                st.caption("Chưa có logo riêng nào — thêm ở ô bên dưới, hoặc tải trực tiếp lúc chọn logo cho trademark.")
-
-            new_logos_multi = st.file_uploader(
-                "Thêm logo mới vào thư viện", type=["png", "jpg", "jpeg"], accept_multiple_files=True,
-                key="logo_upload_multi",
-            )
-            if new_logos_multi:
-                sig = tuple((f.name, f.size) for f in new_logos_multi)
-                if st.session_state.get("logo_saved_sig_multi") != sig:
-                    for f in new_logos_multi:
-                        (mine_logo_dir / f.name).write_bytes(f.getvalue())
-                    st.session_state["logo_saved_sig_multi"] = sig
-                    st.success(f"Đã thêm {len(new_logos_multi)} logo vào thư viện.")
-                    st.rerun()
-
         expander_title = "🏷️ Cấu hình trademark bay" if mode == "trademark" else "🏷️ Thêm trademark bay (tuỳ chọn)"
         with st.expander(expander_title, expanded=(mode == "trademark")):
             if mode == "trademark":
@@ -1111,23 +981,9 @@ def render_outro_swap(mode="full"):
                                     ):
                                         trademark_logo_path = f
                         else:
-                            st.caption("Chưa có logo nào trong thư viện — tải lên ở ô bên dưới.")
-
-                        new_logo_file = st.file_uploader(
-                            "Hoặc tải logo mới (khuyến khích PNG nền trong suốt) — tự lưu lại để "
-                            "dùng cho lần sau, không cần tải lại mỗi lần",
-                            type=["png", "jpg", "jpeg"], key="outro_trademark_logo",
-                        )
-                        if new_logo_file:
-                            sig = (new_logo_file.name, new_logo_file.size)
-                            if st.session_state.get("logo_saved_sig_single") != sig:
-                                mine_logo_dir = _logo_dir_for("mine", user_id)
-                                saved_path = mine_logo_dir / new_logo_file.name
-                                saved_path.write_bytes(new_logo_file.getvalue())
-                                st.session_state["logo_saved_sig_single"] = sig
-                                # Tự chọn LUÔN logo vừa tải lên — đỡ phải tick lại thủ công.
-                                st.session_state[f"logo_tick_mine|{new_logo_file.name}"] = True
-                                st.rerun()
+                            st.caption(
+                                "Chưa có logo nào trong thư viện — thêm ở trang **Personal Library** (sidebar)."
+                            )
                     trademark_opacity = st.slider("Độ mờ (%)", 10, 100, 70, key="outro_trademark_opacity")
                     trademark_size = st.slider(
                         "Độ lớn (% chiều rộng video)", 5, 40, 15, key="outro_trademark_size",
@@ -1488,13 +1344,204 @@ def render_logo_cover():
         render_results_grid([r["out_path"]], "cover_dl")
 
 
+def render_personal_library():
+    """Trang 'Personal Library' — gộp 2 thư viện người dùng tự quản lý
+    (outro để gắn vào cuối video + logo cho trademark bay) vào 1 chỗ,
+    tách khỏi các trang con của Outro Solution cho đỡ rối (trước đây mỗi
+    trang con đều có sẵn 1 khối quản lý riêng, lặp lại 2-3 lần).
+    KHÔNG bao gồm "Thư viện outro đã nhận diện" (outro_core.KNOWN_OUTRO_DIR)
+    — cái đó tự động/dùng chung cả team, khác bản chất với 2 thư viện dưới
+    đây (người dùng CHỦ ĐỘNG chọn thêm/xoá), nên vẫn để riêng ngay trong
+    trang "Cut Outro"/"All-in-One"."""
+    st.title(":material/folder_open: Personal Library")
+    st.caption("Outro và logo bạn tự quản lý — dùng để gắn vào video hoặc làm trademark bay.")
+
+    user_id = st.session_state.get("user_id", "unknown")
+
+    st.subheader(":material/movie: Outro của tôi")
+    st.caption("Outro để GẮN VÀO cuối video sau khi cắt outro đối thủ (dùng ở chế độ \"All-in-One\").")
+    for category in OUTRO_CATEGORY_SLUGS:
+        st.markdown(f"**{category}**")
+
+        shared_existing = _list_outros(category, "shared")
+        if shared_existing:
+            st.caption("Dùng chung (cả team, chỉ xem — không sửa/xoá được ở đây)")
+            cols = st.columns(4)
+            for idx, f in enumerate(shared_existing):
+                with cols[idx % 4]:
+                    st.video(str(f))
+                    dur = _outro_duration(str(f), f.stat().st_mtime)
+                    st.caption(f"{f.stem} · {dur:.1f}s")
+
+        st.caption("Của tôi (chỉ mình bạn thấy)")
+        mine_dir = _outro_dir_for(category, "mine", user_id)
+        mine_existing = _list_outros(category, "mine", user_id)
+
+        if mine_existing:
+            cols = st.columns(4)
+            for idx, f in enumerate(mine_existing):
+                with cols[idx % 4]:
+                    st.video(str(f))
+                    dur = _outro_duration(str(f), f.stat().st_mtime)
+                    st.caption(f"{dur:.1f}s")
+                    new_name = st.text_input(
+                        "Tên", value=f.stem, key=f"rename_outro_{category}_{f.name}",
+                        label_visibility="collapsed",
+                    )
+                    rcol, dcol = st.columns(2)
+                    if rcol.button("✏️ Đổi tên", key=f"rename_btn_{category}_{f.name}", use_container_width=True):
+                        clean_name = _sanitize_name_prefix(new_name)
+                        if not clean_name:
+                            st.error("Tên không được để trống.")
+                        elif clean_name == f.stem:
+                            st.info("Tên không đổi.")
+                        else:
+                            new_path = f.parent / f"{clean_name}{f.suffix}"
+                            if new_path.exists():
+                                st.error(f"Đã có outro tên '{clean_name}' rồi, chọn tên khác.")
+                            else:
+                                f.rename(new_path)
+                                st.rerun()
+                    if dcol.button("🗑️ Xoá", key=f"del_outro_{category}_{f.name}", use_container_width=True):
+                        f.unlink(missing_ok=True)
+                        st.rerun()
+        else:
+            st.caption("Chưa có outro riêng nào — thêm ở ô bên dưới.")
+
+        new_files = st.file_uploader(
+            f"Thêm outro riêng cho {category}",
+            type=["mp4", "mov", "mkv"], accept_multiple_files=True,
+            key=f"outro_upload_multi_{category}",
+        )
+        if new_files:
+            # File tải lên vẫn còn "dính" trong ô upload ở MỌI lần trang tự
+            # load lại sau đó, nên phải nhớ đã lưu batch NÀY rồi — nếu
+            # không, code sẽ tưởng là file mới, ghi lại + rerun() liên tục
+            # mỗi lần trang tải lại, khiến trang cứ tự nhảy không dừng.
+            sig = tuple((f.name, f.size) for f in new_files)
+            if st.session_state.get(f"outro_saved_sig_{category}") != sig:
+                for f in new_files:
+                    (mine_dir / f.name).write_bytes(f.getvalue())
+                st.session_state[f"outro_saved_sig_{category}"] = sig
+                st.success(f"Đã thêm {len(new_files)} outro riêng vào '{category}'.")
+                st.rerun()
+        st.divider()
+
+    st.subheader(":material/image: Logo của tôi")
+    st.caption("Logo dùng cho tính năng \"Flying Trademark\".")
+    mine_logo_dir = _logo_dir_for("mine", user_id)
+    shared_logos = _list_logos("shared")
+    if shared_logos:
+        st.caption("Dùng chung (cả team, chỉ xem — không sửa/xoá được ở đây)")
+        cols = st.columns(4)
+        for idx, f in enumerate(shared_logos):
+            with cols[idx % 4]:
+                st.image(str(f), use_container_width=True)
+                st.caption(f.stem)
+
+    st.caption("Của tôi (chỉ mình bạn thấy)")
+    mine_logos = _list_logos("mine", user_id)
+    if mine_logos:
+        cols = st.columns(4)
+        for idx, f in enumerate(mine_logos):
+            with cols[idx % 4]:
+                st.image(str(f), use_container_width=True)
+                new_name = st.text_input(
+                    "Tên", value=f.stem, key=f"rename_logo_{f.name}", label_visibility="collapsed",
+                )
+                rcol, dcol = st.columns(2)
+                if rcol.button("✏️ Đổi tên", key=f"rename_logo_btn_{f.name}", use_container_width=True):
+                    clean_name = _sanitize_name_prefix(new_name)
+                    if not clean_name:
+                        st.error("Tên không được để trống.")
+                    elif clean_name == f.stem:
+                        st.info("Tên không đổi.")
+                    else:
+                        new_path = f.parent / f"{clean_name}{f.suffix}"
+                        if new_path.exists():
+                            st.error(f"Đã có logo tên '{clean_name}' rồi, chọn tên khác.")
+                        else:
+                            f.rename(new_path)
+                            st.rerun()
+                if dcol.button("🗑️ Xoá", key=f"del_logo_btn_{f.name}", use_container_width=True):
+                    f.unlink(missing_ok=True)
+                    st.rerun()
+    else:
+        st.caption("Chưa có logo riêng nào — thêm ở ô bên dưới.")
+
+    new_logos_multi = st.file_uploader(
+        "Thêm logo mới vào thư viện", type=["png", "jpg", "jpeg"], accept_multiple_files=True,
+        key="logo_upload_multi",
+    )
+    if new_logos_multi:
+        sig = tuple((f.name, f.size) for f in new_logos_multi)
+        if st.session_state.get("logo_saved_sig_multi") != sig:
+            for f in new_logos_multi:
+                (mine_logo_dir / f.name).write_bytes(f.getvalue())
+            st.session_state["logo_saved_sig_multi"] = sig
+            st.success(f"Đã thêm {len(new_logos_multi)} logo vào thư viện.")
+            st.rerun()
+
+
+_EVENT_CATEGORY_ACCENT = {"official": "#111111", "shopping": "#f5a623", "unofficial": "#9aa0a6"}
+_VN_MONTH_NAMES = {
+    1: "Tháng 1", 2: "Tháng 2", 3: "Tháng 3", 4: "Tháng 4", 5: "Tháng 5", 6: "Tháng 6",
+    7: "Tháng 7", 8: "Tháng 8", 9: "Tháng 9", 10: "Tháng 10", 11: "Tháng 11", 12: "Tháng 12",
+}
+
+
 def render_events():
     """Trang 'Events' — liệt kê ngày lễ/sự kiện SẮP TỚI theo quốc gia, để
     team UA biết trước mà chuẩn bị ads (đổi outro theo mùa, tăng ngân sách
     trước Black Friday...). Mỗi mục có nguồn kiểm chứng riêng (xem
-    events_data.py) — KHÔNG tự bịa ngày theo trí nhớ khi thêm dữ liệu mới."""
+    events_data.py) — KHÔNG tự bịa ngày theo trí nhớ khi thêm dữ liệu mới.
+
+    Giao diện tự vẽ bằng HTML/CSS riêng (thay vì st.container mặc định) để
+    khớp tông màu chung của app: đen #111111 (trung tính/lễ chính thức),
+    cam #f5a623 (đúng màu nhấn đang dùng cho mục đang chọn ở sidebar — gán
+    cho "sự kiện mua sắm" vì đây là loại quan trọng nhất với ads/UA, nên
+    nổi bật nhất), xám nhạt (không chính thức). Nhóm theo THÁNG để quét
+    nhanh "tháng tới có gì" thay vì 1 danh sách phẳng dài."""
     st.title(":material/event: Events")
-    st.caption("Ngày lễ/sự kiện sắp tới theo từng quốc gia — mỗi mục đều có nguồn kiểm chứng kèm theo.")
+    st.caption(
+        f"Ngày lễ/sự kiện sắp tới TỪ NAY ĐẾN HẾT NĂM {date.today().year} theo từng quốc gia — mỗi mục "
+        "đều có nguồn kiểm chứng kèm theo."
+    )
+
+    st.markdown(
+        """
+        <style>
+        .event-card {
+            display: flex; justify-content: space-between; align-items: center; gap: 14px;
+            border: 1px solid #ebebec; border-radius: 12px; padding: 14px 18px 14px 16px;
+            margin-bottom: 10px; border-left: 4px solid var(--accent);
+            transition: box-shadow 0.15s ease, border-color 0.15s ease;
+        }
+        .event-card:hover { box-shadow: 0 3px 14px rgba(17,17,17,0.07); border-color: #e0e0e1; }
+        .event-card-title { font-weight: 700; font-size: 1.0rem; color: #111111; line-height: 1.35; }
+        .event-card-sub { color: #86898f; font-size: 0.78rem; margin-top: 3px; }
+        .event-badge {
+            display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 2px 9px;
+            border-radius: 20px; margin-right: 7px; letter-spacing: 0.01em; vertical-align: middle;
+        }
+        .event-source { font-size: 0.74rem; color: #a4a7ac; text-decoration: none; }
+        .event-source:hover { color: #f5a623; text-decoration: underline; }
+        .event-days {
+            flex-shrink: 0; font-weight: 700; font-size: 0.84rem; padding: 7px 15px;
+            border-radius: 20px; white-space: nowrap; background: #f4f4f5; color: #111111;
+            text-align: center; min-width: 84px;
+        }
+        .event-days.urgent { background: #f5a623; color: #14161b; }
+        .event-month-header {
+            font-weight: 700; font-size: 0.92rem; color: #6b7280; text-transform: uppercase;
+            letter-spacing: 0.04em; margin: 22px 0 10px 2px; border-bottom: 1px solid #ebebec;
+            padding-bottom: 6px;
+        }
+        .event-month-header:first-of-type { margin-top: 6px; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     filt1, filt2, filt3 = st.columns(3)
     with filt1:
@@ -1507,6 +1554,7 @@ def render_events():
     with filt2:
         country_choice = st.multiselect(
             "Quốc gia (để trống = tất cả)", list(events_data.COUNTRIES.keys()),
+            format_func=lambda c: f"{events_data.COUNTRY_FLAGS.get(c, '')} {c}".strip(),
             key="events_country_filter",
         )
     with filt3:
@@ -1515,11 +1563,13 @@ def render_events():
             format_func=lambda c: events_data.CATEGORY_LABELS[c], key="events_category_filter",
         )
 
+    # Chỉ hiện tới hết năm nay — dữ liệu ngày âm lịch/tôn giáo phải cập
+    # nhật lại mỗi năm (xem events_data.py), đoán xa hơn 1 năm dễ sai. Kỹ
+    # lưỡng trong phạm vi chắc chắn còn hơn dàn trải xa mà thiếu chính xác.
     rows = events_data.upcoming_events(
         countries=country_choice or None,
         tiers=tier_choice or None,
         categories=category_choice or None,
-        limit=60,
     )
 
     stale = [ev for ev in events_data.EVENTS if events_data.needs_update(ev, date.today())]
@@ -1535,21 +1585,41 @@ def render_events():
         return
 
     today = date.today()
+    current_month_key = None
+    cards_html = []
     for d, ev in rows:
+        month_key = (d.year, d.month)
+        if month_key != current_month_key:
+            current_month_key = month_key
+            month_label = _VN_MONTH_NAMES[d.month] + (f" {d.year}" if d.year != today.year else "")
+            cards_html.append(f'<div class="event-month-header">{month_label}</div>')
+
         days_left = (d - today).days
         country_name, _ = events_data.COUNTRIES.get(ev["country"], (ev["country"], None))
-        with st.container(border=True):
-            info_col, days_col = st.columns([4, 1])
-            with info_col:
-                title = ev["name"] + (f" ({ev['local_name']})" if ev.get("local_name") else "")
-                st.markdown(f"**{title}** — {country_name}")
-                st.caption(
-                    f"{events_data.CATEGORY_LABELS[ev['category']]} · {d.strftime('%d/%m/%Y')}"
-                    + (f" · {ev['note']}" if ev.get("note") else "")
-                )
-                st.caption(f"🔗 Nguồn: {ev['source']}")
-            with days_col:
-                st.markdown(f"**{'Hôm nay!' if days_left == 0 else f'còn {days_left} ngày'}**")
+        flag = events_data.COUNTRY_FLAGS.get(ev["country"], "")
+        accent = _EVENT_CATEGORY_ACCENT.get(ev["category"], "#9aa0a6")
+        title = ev["name"] + (f" ({ev['local_name']})" if ev.get("local_name") else "")
+        badge_style = (
+            f"background:{accent};color:#fff;" if ev["category"] != "unofficial"
+            else "background:#eef0f2;color:#777c84;"
+        )
+        days_label = "Hôm nay!" if days_left == 0 else f"còn {days_left} ngày"
+        urgent_cls = " urgent" if days_left <= 3 else ""
+        sub_bits = [d.strftime("%d/%m/%Y")]
+        if ev.get("note"):
+            sub_bits.append(ev["note"])
+        cards_html.append(
+            f'<div class="event-card" style="--accent:{accent}">'
+            f'<div>'
+            f'<span class="event-badge" style="{badge_style}">{events_data.CATEGORY_LABELS[ev["category"]]}</span>'
+            f'<span class="event-card-title">{flag} {title} — {country_name}</span>'
+            f'<div class="event-card-sub">{" · ".join(sub_bits)} · '
+            f'<a class="event-source" href="{ev["source"]}" target="_blank">🔗 Nguồn</a></div>'
+            f'</div>'
+            f'<div class="event-days{urgent_cls}">{days_label}</div>'
+            f'</div>'
+        )
+    st.markdown("\n".join(cards_html), unsafe_allow_html=True)
 
 
 check_ffmpeg()
@@ -1580,6 +1650,7 @@ NAV_ITEMS = [
     {"key": "remix", "label": "Video Remixer", "icon": "shuffle", "fn": render_video_remixer},
     {"key": "logocover", "label": "Logo Cover", "icon": "shield", "fn": render_logo_cover},
     {"key": "events", "label": "Events", "icon": "event", "fn": render_events},
+    {"key": "personal_library", "label": "Personal Library", "icon": "folder_open", "fn": render_personal_library},
 ]
 
 
@@ -1636,11 +1707,22 @@ def _sidebar_state_css(collapsed, active_key, expanded_groups):
         children = item.get("children", [])
         child_active = any(c["key"] == active_key for c in children)
         cls = f'.st-key-nav_{item["key"]} button'
-        # Mục CHA cũng nổi màu cam khi 1 mục CON của nó đang active — để
-        # người dùng vẫn nhận ra đang ở nhóm nào dù đang xem trang con.
-        if item["key"] == active_key or child_active:
+        if children:
+            # Mục CHA (có mục con) luôn đậm chữ hơn — đọc như tiêu đề nhóm,
+            # phân biệt rõ với mục con bên dưới (chữ thường, nhỏ hơn).
+            rules.append(f'{cls} {{ font-weight: 700; }}')
+        if item["key"] == active_key:
             rules.append(
                 f'{cls} {{ background: rgba(245,166,35,0.16) !important; color: #f5a623 !important; }} '
+                f'{cls} span[data-testid="stIconMaterial"] {{ color: #f5a623 !important; }}'
+            )
+        elif child_active:
+            # 1 mục CON đang active (không phải chính mục cha) — chỉ đổi
+            # MÀU CHỮ sang cam, KHÔNG tô nền — cố tình nhạt hơn hẳn mục con
+            # đang active (tô nền đầy) để mắt phân biệt ngay "đây là NHÓM
+            # đang mở" khác với "đây là TRANG đang xem".
+            rules.append(
+                f'{cls} {{ color: #f5a623 !important; }} '
                 f'{cls} span[data-testid="stIconMaterial"] {{ color: #f5a623 !important; }}'
             )
         else:
@@ -1648,50 +1730,65 @@ def _sidebar_state_css(collapsed, active_key, expanded_groups):
         for child in children:
             wrapper_cls = f'.st-key-nav_{child["key"]}'
             child_cls = f'{wrapper_cls} button'
-            # Thụt vào + chữ nhỏ hơn 1 chút cho mục con — phân biệt trực
-            # quan với mục cha, giống kiểu dropdown/accordion quen thuộc.
-            rules.append(f'{child_cls} {{ padding-left: 2.4rem !important; font-size: 0.86rem; }}')
+            # Icon nhỏ hơn + chữ nhỏ hơn + không đậm — mục con phải nhẹ
+            # ký hơn hẳn mục cha (bold) để phân biệt cấp bậc rõ ràng, không
+            # chỉ dựa vào thụt lề như trước (đã gặp phản hồi thật: "3 cái
+            # bar con có thiết kế không khác gì bar mẹ").
+            rules.append(
+                f'{child_cls} {{ padding-left: 0.85rem !important; font-size: 0.82rem; font-weight: 400; }} '
+                f'{child_cls} span[data-testid="stIconMaterial"] {{ font-size: 1.1rem !important; }}'
+            )
             if child["key"] == active_key:
                 rules.append(
                     f'{child_cls} {{ background: rgba(245,166,35,0.16) !important; color: #f5a623 !important; }} '
                     f'{child_cls} span[data-testid="stIconMaterial"] {{ color: #f5a623 !important; }}'
                 )
             else:
-                rules.append(f'{child_cls} span[data-testid="stIconMaterial"] {{ color: #9aa0a6; }}')
+                rules.append(f'{child_cls} span[data-testid="stIconMaterial"] {{ color: #7a8087; }}')
 
         if children:
-            # Đóng/mở CẢ NHÓM con MƯỢT bằng max-height + opacity thay vì
-            # display:none bật/tắt đột ngột (đã gặp phản hồi thật: "dropdown
-            # không mượt"). Nhóm giờ là 1 container DUY NHẤT bọc cả 3 nút
-            # con (xem vòng lặp render bên dưới) — Streamlit tự chèn "gap"
-            # giữa MỌI phần tử liền kề trong 1 khối dọc dù phần tử đó đã ẩn
-            # hết bằng max-height:0 (đã gặp thật: đóng nhóm vẫn hở 1 khoảng
-            # ở giữa) — gộp còn 1 container thì chỉ còn ĐÚNG 1 khoảng gap
-            # (trước + sau) cần triệt tiêu bằng margin âm khi đóng.
+            # Khối chứa mục con — viền trái mảnh nối từ mục cha xuống, kiểu
+            # "cây thư mục" quen thuộc, giúp mắt gom nhóm 3 mục con lại với
+            # nhau và nhận ra chúng THUỘC VỀ mục cha bên trên (thay vì
+            # trông như 3 mục ngang hàng độc lập — đã gặp phản hồi thật).
             group_wrapper_cls = f'.st-key-nav_children_{item["key"]}'
+            rules.append(
+                f'{group_wrapper_cls} {{ margin-left: 1.35rem !important; padding-left: 0.5rem !important; '
+                f'border-left: 2px solid #262a33; }}'
+            )
             # QUAN TRỌNG: Streamlit bọc container này trong 1 lớp trung gian
             # [data-testid="stLayoutWrapper"] (không tự đặt class riêng theo
             # key được — dùng chung 1 class phát sinh cho MỌI wrapper trên
-            # trang, không target trực tiếp bằng key được). Khoảng cách 34px
-            # thừa hoá ra không phải do wrapper này mà do khoảng "gap: 16px"
-            # cha (.stVerticalBlock chứa cả 2 nút cha/con) TỰ CHÈN giữa MỌI
-            # phần tử con trực tiếp — kể cả phần tử đã co về 0 chiều cao,
-            # CHỈ khi phần tử đó bị đưa ra khỏi luồng (position:absolute)
-            # thì mới không bị tính vào gap nữa. Đã thử margin âm trên chính
-            # container của mình trước — KHÔNG ăn thua, vì margin không đụng
-            # được vào cơ chế gap của cha. Phải ép position:absolute cho
-            # ĐÚNG stLayoutWrapper (phần tử flex thật sự, không phải div bên
-            # trong nó) — dùng :has() để chọn đúng wrapper NÀY (không phải
-            # mọi wrapper khác trên trang).
+            # trang) — đây MỚI là phần tử flex thật sự cha (.stVerticalBlock
+            # chứa cả nút cha/con) tự chèn "gap" cố định vào, không phải
+            # margin. Test thực tế: margin âm trên chính container của
+            # mình KHÔNG ăn thua gì (đã thử -1.1rem, khoảng hở đo được vẫn
+            # y nguyên) — margin không đụng được vào gap của cha.
+            #
+            # Cách MƯỢT + KHÔNG hở khoảng: dùng display:none/block (loại
+            # hẳn khỏi luồng flex khi đóng, hết hở khoảng) NHƯNG với
+            # "transition: display ... allow-discrete" + "@starting-style"
+            # (CSS hiện đại, Chrome/Edge 117+) — cho phép "display" (vốn
+            # không animate được) chỉ thật sự đổi giá trị ở CUỐI animation
+            # (lúc đóng) hoặc ĐẦU animation (lúc mở), còn lại vẫn mờ dần +
+            # thu nhỏ mượt như bình thường suốt quá trình — animation
+            # KHÔNG bị cắt cụt như cách display:none thường (đổi ngay lập
+            # tức) nhưng vẫn dứt điểm hết hở khoảng khi đóng hẳn.
             outer_wrapper_selector = f'[data-testid="stLayoutWrapper"]:has(> {group_wrapper_cls})'
-            rules.append(f'{group_wrapper_cls} {{ transition: opacity 0.16s ease; overflow: hidden; }}')
             show_group = not collapsed and item["key"] in expanded_groups
             if show_group:
-                rules.append(f'{outer_wrapper_selector} {{ position: static; }}')
-                rules.append(f'{group_wrapper_cls} {{ max-height: 160px; opacity: 1; }}')
+                rules.append(
+                    f'{outer_wrapper_selector} {{ display: block; opacity: 1; max-height: 200px; '
+                    f'overflow: hidden; transition: display 0.38s allow-discrete, opacity 0.34s ease, '
+                    f'max-height 0.36s ease; }} '
+                    f'@starting-style {{ {outer_wrapper_selector} {{ opacity: 0; max-height: 0px; }} }}'
+                )
             else:
-                rules.append(f'{outer_wrapper_selector} {{ position: absolute; }}')
-                rules.append(f'{group_wrapper_cls} {{ max-height: 0px; opacity: 0; pointer-events: none; }}')
+                rules.append(
+                    f'{outer_wrapper_selector} {{ display: none; opacity: 0; max-height: 0px; '
+                    f'overflow: hidden; transition: display 0.32s allow-discrete, opacity 0.28s ease, '
+                    f'max-height 0.3s ease; pointer-events: none; }}'
+                )
     return "<style>" + "\n".join(rules) + "</style>"
 
 
