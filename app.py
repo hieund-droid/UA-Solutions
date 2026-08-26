@@ -1538,6 +1538,16 @@ def render_events():
             padding-bottom: 6px;
         }
         .event-month-header:first-of-type { margin-top: 6px; }
+        /* Ô chọn Tier/Quốc gia/Loại — thẻ đã chọn mặc định ra màu đỏ (theme
+        BaseWeb bên dưới st.multiselect không tự theo primaryColor cho phần
+        này) — đổi sang đen/trắng cho khớp tông app, không lạc tông (phản
+        hồi thật). */
+        [data-baseweb="tag"] {
+            background-color: #111111 !important; border-color: #111111 !important;
+            color: #ffffff !important;
+        }
+        [data-baseweb="tag"] span { color: #ffffff !important; }
+        [data-baseweb="tag"] svg { fill: #ffffff !important; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1636,6 +1646,7 @@ check_ffmpeg()
 # nguyên máy chủ (chế độ "Trademark bay" bỏ qua HẲN bước dò/cắt outro nặng
 # nhất nếu không ai chọn "Cắt outro"/"Đầy đủ").
 NAV_ITEMS = [
+    {"key": "personal_library", "label": "Personal Library", "icon": "folder_open", "fn": render_personal_library},
     {
         "key": "outro", "label": "Outro Solution", "icon": "content_cut",
         "children": [
@@ -1650,7 +1661,6 @@ NAV_ITEMS = [
     {"key": "remix", "label": "Video Remixer", "icon": "shuffle", "fn": render_video_remixer},
     {"key": "logocover", "label": "Logo Cover", "icon": "shield", "fn": render_logo_cover},
     {"key": "events", "label": "Events", "icon": "event", "fn": render_events},
-    {"key": "personal_library", "label": "Personal Library", "icon": "folder_open", "fn": render_personal_library},
 ]
 
 
@@ -1667,8 +1677,12 @@ def _find_nav_item(key):
 
 if "nav_page" not in st.session_state:
     # Mặc định vào thẳng "Đầy đủ" — giữ đúng hành vi trước khi tách 3 chế độ,
-    # để ai đã quen dùng không bị bất ngờ.
-    st.session_state.nav_page = NAV_ITEMS[0]["children"][2]["key"]
+    # để ai đã quen dùng không bị bất ngờ. Dò theo key "outro" thay vì
+    # NAV_ITEMS[0] — vị trí mục "outro" trong danh sách có thể đổi (đã đổi
+    # thật, "personal_library" được đưa lên đầu), lấy theo index cố định dễ
+    # trỏ nhầm sang mục khác không có "children".
+    _outro_item = next(item for item in NAV_ITEMS if item["key"] == "outro")
+    st.session_state.nav_page = _outro_item["children"][2]["key"]
 if "sidebar_collapsed" not in st.session_state:
     st.session_state.sidebar_collapsed = False
 if "sidebar_group_expanded" not in st.session_state:
@@ -1710,7 +1724,11 @@ def _sidebar_state_css(collapsed, active_key, expanded_groups):
         if children:
             # Mục CHA (có mục con) luôn đậm chữ hơn — đọc như tiêu đề nhóm,
             # phân biệt rõ với mục con bên dưới (chữ thường, nhỏ hơn).
-            rules.append(f'{cls} {{ font-weight: 700; }}')
+            # !important: CSS tĩnh ở đầu file ép sẵn font-weight:500 cho MỌI
+            # nút nav cùng độ ưu tiên (0,1,1) — không !important dễ thua/ăn
+            # may theo thứ tự chèn, thực tế đã không đủ đậm để phân biệt rõ
+            # (phản hồi thật).
+            rules.append(f'{cls} {{ font-weight: 700 !important; }}')
         if item["key"] == active_key:
             rules.append(
                 f'{cls} {{ background: rgba(245,166,35,0.16) !important; color: #f5a623 !important; }} '
@@ -1735,7 +1753,8 @@ def _sidebar_state_css(collapsed, active_key, expanded_groups):
             # chỉ dựa vào thụt lề như trước (đã gặp phản hồi thật: "3 cái
             # bar con có thiết kế không khác gì bar mẹ").
             rules.append(
-                f'{child_cls} {{ padding-left: 0.85rem !important; font-size: 0.82rem; font-weight: 400; }} '
+                f'{child_cls} {{ padding-left: 0.85rem !important; font-size: 0.82rem; '
+                f'font-weight: 400 !important; }} '
                 f'{child_cls} span[data-testid="stIconMaterial"] {{ font-size: 1.1rem !important; }}'
             )
             if child["key"] == active_key:
@@ -1754,8 +1773,17 @@ def _sidebar_state_css(collapsed, active_key, expanded_groups):
             group_wrapper_cls = f'.st-key-nav_children_{item["key"]}'
             rules.append(
                 f'{group_wrapper_cls} {{ margin-left: 1.35rem !important; padding-left: 0.5rem !important; '
-                f'border-left: 2px solid #262a33; }}'
+                f'border-left: 2px solid #262a33; width: calc(100% - 1.35rem) !important; '
+                f'box-sizing: border-box !important; }}'
             )
+            # margin-left ĐẨY khối này lệch phải nhưng KHÔNG tự trừ bớt bề
+            # rộng (block mặc định width:auto lẽ ra tự trừ, nhưng Streamlit
+            # đã ép sẵn width:100% cho container này) — khối bị tràn ra
+            # ngoài đúng bằng phần margin-left, rồi bị overflow:hidden của
+            # khối cha (bên dưới) CẮT LẸM mất mép phải các nút con (đã gặp
+            # phản hồi thật, xem ảnh chụp: các nút con bị vuông góc/cắt cụt
+            # bên phải thay vì bo tròn đều). Trừ thẳng bề rộng bù lại phần
+            # margin-left là cách chắc chắn nhất.
             # QUAN TRỌNG: Streamlit bọc container này trong 1 lớp trung gian
             # [data-testid="stLayoutWrapper"] (không tự đặt class riêng theo
             # key được — dùng chung 1 class phát sinh cho MỌI wrapper trên
