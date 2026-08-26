@@ -27,16 +27,24 @@ Cách nhận diện outro đối thủ:
   khác nhau trong cùng 1 lần — thuật toán tự gom nhóm theo từng app riêng
   biệt (mỗi nhóm so khớp chéo với nhau), không cần tự sắp xếp/lọc trước.
 
-  Video nào không khớp được với video nào khác (vd chỉ tải lên 1 video duy
-  nhất, hoặc không tìm được video nào khác cùng app trong mẻ tải lên) sẽ
-  được thử thêm 1 lớp nhận diện DỰ PHÒNG (xem find_solo_outro_boundary):
-  tự dò điểm chuyển cảnh gần cuối video + xác nhận bằng badge cửa hàng ứng
-  dụng ("GET IT ON Google Play" / "Download on the App Store" — 2 mẫu
-  CHUẨN HOÁ giống nhau ở mọi app, so mẫu được). Chỉ khi cả 2 lớp (so khớp
-  chéo + lớp dự phòng) đều không tìm được gì mới GIỮ NGUYÊN, không cắt —
-  chủ động chọn AN TOÀN thay vì đoán liều (vd cắt cứng N giây cuối): rất có
-  thể video đó không hề có outro thật, đoán liều dễ cắt nhầm vào nội dung
-  thật hơn là giúp ích.
+  Video nào không khớp được với video nào khác trong CÙNG mẻ tải lên sẽ
+  được thử tiếp 2 lớp dự phòng, theo thứ tự:
+    2. So với THƯ VIỆN outro đối thủ đã từng nhận diện được trước đó (xem
+       KNOWN_OUTRO_DIR/_match_against_known_library) — mỗi khi 1 video cắt
+       thành công đủ tin cậy (khớp chéo hoặc dò-đơn-lẻ có badge xác nhận),
+       đoạn outro đó tự động được LƯU LẠI vào thư viện dùng chung cho cả
+       team, để lần sau chỉ cần 1 video (không có gì để so khớp chéo) vẫn
+       nhận ra được nếu đã từng gặp outro đó. Đây vẫn là so khớp chéo
+       (đáng tin hơn), chỉ khác là so với thư viện thay vì so với video
+       khác trong cùng mẻ.
+    3. Nếu cả thư viện cũng không khớp: dò điểm chuyển cảnh gần cuối video
+       + xác nhận bằng badge cửa hàng ứng dụng ("GET IT ON Google Play" /
+       "Download on the App Store" — 2 mẫu CHUẨN HOÁ giống nhau ở mọi app,
+       so mẫu được) — xem find_solo_outro_boundary.
+  Chỉ khi CẢ 3 lớp đều không tìm được gì mới GIỮ NGUYÊN, không cắt — chủ
+  động chọn AN TOÀN thay vì đoán liều (vd cắt cứng N giây cuối): rất có thể
+  video đó không hề có outro thật, đoán liều dễ cắt nhầm vào nội dung thật
+  hơn là giúp ích.
 
 Dùng module (import từ app.py):
     process_outro_swap(paths, own_outro_path, workdir, strip_audio)
@@ -45,12 +53,21 @@ Yêu cầu: ffmpeg, ffprobe trong PATH (giống remix_core.py).
 """
 
 import concurrent.futures
+import uuid
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 from remix_core import concat_clips, ffprobe_info, split_clips
+
+# Thư viện outro đối thủ ĐÃ TỪNG NHẬN DIỆN ĐƯỢC — dùng chung cho cả team
+# (không chia theo người như outros/users/<id>/, vì đây là nhận diện outro
+# ĐỐI THỦ, ai gặp trước cũng nên giúp ích được cho người sau). Chỉ chứa
+# đúng ĐOẠN OUTRO đã cắt ra (không phải cả video), không âm thanh (so khớp
+# chỉ cần hình). Xem _save_to_known_library / _match_against_known_library.
+KNOWN_OUTRO_DIR = Path(__file__).parent / "known_outros"
+KNOWN_OUTRO_DIR.mkdir(exist_ok=True)
 
 # Thư mục chứa ảnh mẫu badge cửa hàng ứng dụng (Google Play, App Store) —
 # dùng cho _find_solo_outro_boundary bên dưới. Đây là ẢNH TĨNH đi kèm code
@@ -102,6 +119,11 @@ MAX_OUTRO_LOOKBACK = 20.0
 # Ngưỡng mặc định cho _match() — xem lý do dùng "màu trung bình theo lưới"
 # thay vì so vân ảnh (perceptual hash) ngay bên dưới.
 DEFAULT_MATCH_THRESHOLD = 15
+# Số giây NỘI DUNG THẬT tối thiểu phải còn lại sau khi cắt — xem
+# _process_one_video: chặn trường hợp ranh giới xác định sai khiến outro
+# "nuốt" gần hết/hết cả video, tạo ra 1 đoạn nội dung gần như rỗng làm hỏng
+# bước ghép clip (đã gặp thật, xem comment tại chỗ dùng).
+MIN_CONTENT_SECONDS = 1.0
 
 
 def _pick_larger_spec(info_a, info_b):
@@ -510,6 +532,90 @@ def find_solo_outro_boundary(path, duration, fps,
     }
 
 
+# ============================================================================
+# Thư viện outro đối thủ ĐÃ TỪNG NHẬN DIỆN ĐƯỢC — xem KNOWN_OUTRO_DIR.
+def list_known_outros():
+    return sorted(KNOWN_OUTRO_DIR.glob("*.mp4"), key=lambda p: p.name.lower())
+
+
+def _match_against_known_library(path, duration, fps, threshold, safety_margin_seconds):
+    """So video `path` (không khớp được video nào khác trong mẻ đang xử lý)
+    với TỪNG outro đã lưu trong thư viện — dùng LẠI đúng cơ chế so khớp
+    chéo (_read_tail_hashes/_best_matching_offset/_find_boundary_by_time)
+    như so giữa 2 video thật, chỉ khác nguồn so là thư viện thay vì video
+    khác trong mẻ. Trả về giây bắt đầu outro (đã trừ safety_margin) nếu
+    khớp đủ tin cậy, hoặc None nếu không khớp gì / thư viện đang rỗng."""
+    known = list_known_outros()
+    if not known:
+        return None
+    tail = _read_tail_hashes(path, duration, fps, MAX_OUTRO_LOOKBACK)
+    if not tail["hashes"]:
+        return None
+
+    best_boundary = None
+    for k in known:
+        k_info = ffprobe_info(k)
+        if not k_info["duration"]:
+            continue
+        # Outro luu trong thu vien la doan NGAN da cat san (khong phai ca
+        # video) - doc toan bo lam "duoi" de so khop, khong can lookback
+        # rieng.
+        k_tail = _read_tail_hashes(k, k_info["duration"], k_info["fps"] or 30, k_info["duration"])
+        if not k_tail["hashes"]:
+            continue
+        res = _best_matching_offset(tail, k_tail, threshold)
+        if res is None:
+            continue
+        anchor_offset, anchor_shift = res
+        boundary = _find_boundary_by_time(tail, k_tail, threshold, anchor_offset, anchor_shift)
+        if best_boundary is None or boundary < best_boundary:
+            best_boundary = boundary
+
+    if best_boundary is None:
+        return None
+    candidate_start = max(best_boundary - safety_margin_seconds, 0.0)
+    if candidate_start < MIN_CONTENT_SECONDS:
+        return None
+    return candidate_start
+
+
+def _save_to_known_library(video_path, outro_start, duration, threshold, workdir):
+    """Trích đúng đoạn outro [outro_start, duration] của `video_path` ra
+    thành 1 clip ngắn, lưu vào thư viện — NHƯNG bỏ qua nếu đoạn này đã
+    khá giống 1 outro có sẵn trong thư viện rồi (tránh thư viện phình to
+    vô ích vì lưu trùng lặp nhiều lần cùng 1 outro thực tế). Lỗi ở bước
+    này KHÔNG được làm hỏng video đang xử lý — gọi hàm này trong try/except
+    ở nơi gọi (xem _process_one_video)."""
+    fps = ffprobe_info(video_path)["fps"] or 30
+    new_tail = _read_tail_hashes(video_path, duration, fps, duration - outro_start)
+    if not new_tail["hashes"]:
+        return None
+
+    for k in list_known_outros():
+        k_info = ffprobe_info(k)
+        if not k_info["duration"]:
+            continue
+        k_tail = _read_tail_hashes(k, k_info["duration"], k_info["fps"] or 30, k_info["duration"])
+        if not k_tail["hashes"]:
+            continue
+        if _best_matching_offset(new_tail, k_tail, threshold) is not None:
+            return None  # da co outro nay trong thu vien roi, khong luu trung
+
+    info = ffprobe_info(video_path)
+    target_spec = {"width": info["width"] or 1280, "height": info["height"] or 720, "fps": info["fps"] or 30}
+    clips = split_clips(
+        video_path, [(outro_start, duration)], workdir, info["has_audio"], False, 0.0,
+        target_spec, name_prefix=f"newknown{uuid.uuid4().hex[:8]}",
+    )
+    if not clips:
+        return None
+    out_path = KNOWN_OUTRO_DIR / f"known_{uuid.uuid4().hex[:10]}.mp4"
+    clips[0].rename(out_path)
+    for c in clips[1:]:
+        c.unlink(missing_ok=True)
+    return out_path
+
+
 def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margin_seconds=0.15,
                            enable_solo_detection=True):
     """Xác định mốc thời gian bắt đầu outro đối thủ cho mỗi video, bằng cách
@@ -531,13 +637,18 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
 
     Trả về list dict cùng độ dài `paths`:
       - outro_start: giây bắt đầu outro trong video gốc, None nếu không cắt.
-      - reason: "matched" (khớp được với video khác — chắc chắn nhất) |
-                "solo_badge" (không khớp được video nào khác, nhưng dò được
-                điểm chuyển cảnh gần cuối VÀ xác nhận có badge cửa hàng ứng
-                dụng — khá tin cậy) |
-                "solo_scene" (không khớp được video nào khác, chỉ dò được
-                điểm chuyển cảnh gần cuối, KHÔNG thấy badge xác nhận — kém
-                tin cậy hơn 2 loại trên, nên soát lại kết quả) |
+      - reason: "matched" (khớp được với video khác trong cùng mẻ — chắc
+                chắn nhất) |
+                "library_match" (không khớp được video nào trong mẻ, nhưng
+                khớp với 1 outro đã có sẵn trong thư viện — cũng là so
+                khớp chéo nên khá chắc chắn, chỉ xếp sau "matched" vì thư
+                viện có thể chứa outro hơi khác bản đang xét) |
+                "solo_badge" (không khớp được video nào khác/thư viện,
+                nhưng dò được điểm chuyển cảnh gần cuối VÀ xác nhận có
+                badge cửa hàng ứng dụng — khá tin cậy) |
+                "solo_scene" (chỉ dò được điểm chuyển cảnh gần cuối, KHÔNG
+                thấy badge xác nhận — kém tin cậy nhất trong các loại có
+                cắt, nên soát lại kết quả) |
                 "none" (không tìm được dấu hiệu outro nào — GIỮ NGUYÊN,
                 không đoán liều).
 
@@ -600,14 +711,38 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
                     best_boundary = boundary
             if best_boundary is None:
                 continue
-            results[i] = {"outro_start": max(best_boundary - safety_margin_seconds, 0.0), "reason": "matched"}
+            candidate_start = max(best_boundary - safety_margin_seconds, 0.0)
+            # An toàn: lấy kết quả "cắt được NHIỀU NHẤT" trong cả nhóm (xem
+            # comment phía trên) có rủi ro thật — nếu dù chỉ 1 VIDEO KHÁC
+            # trong nhóm có nội dung giống bất thường (trùng lặp/gần trùng,
+            # không chỉ trùng đúng đoạn outro), việc dò lùi có thể chạy quá
+            # xa, khiến ranh giới tính ra nuốt gần hết/hết video — đã gặp
+            # thật (báo lỗi thực tế): 1 video trong mẻ 30 video làm ghép
+            # clip lỗi vì đoạn nội dung còn lại gần như rỗng. Không tin kết
+            # quả nếu nội dung còn lại dưới MIN_CONTENT_SECONDS — coi như
+            # KHÔNG xác định được (giữ nguyên "none"), an toàn hơn cắt sai.
+            if candidate_start < MIN_CONTENT_SECONDS:
+                continue
+            results[i] = {"outro_start": candidate_start, "reason": "matched"}
 
-    # Video nào vẫn "none" (không khớp được video nào khác — thường là chỉ
-    # có 1 video/app trong mẻ này) — thử thêm 1 lớp nhận diện KHÔNG cần so
-    # khớp chéo (xem find_solo_outro_boundary phía trên: dò điểm chuyển
-    # cảnh gần cuối + xác nhận bằng badge cửa hàng ứng dụng). Đây là lớp bổ
-    # sung, KHÔNG thay thế so khớp chéo (so khớp chéo vẫn đáng tin hơn khi
-    # có được, nên luôn ưu tiên chạy trước như ở trên).
+    # Video nào vẫn "none" (không khớp được video nào khác trong CÙNG mẻ) —
+    # thử so với THƯ VIỆN outro đã từng nhận diện được trước đó (vẫn là so
+    # khớp chéo, chỉ khác nguồn so — đáng tin hơn lớp dò-đơn-lẻ bên dưới,
+    # nên ưu tiên chạy trước).
+    for i in range(n):
+        if results[i]["reason"] != "none":
+            continue
+        candidate_start = _match_against_known_library(
+            paths[i], durations[i], infos[i]["fps"] or 30, threshold, safety_margin_seconds,
+        )
+        if candidate_start is None:
+            continue
+        results[i] = {"outro_start": candidate_start, "reason": "library_match"}
+
+    # Video nào vẫn "none" sau CẢ 2 lớp trên — thử thêm 1 lớp nhận diện
+    # KHÔNG cần so khớp chéo (xem find_solo_outro_boundary phía trên: dò
+    # điểm chuyển cảnh gần cuối + xác nhận bằng badge cửa hàng ứng dụng).
+    # Đây là lớp dự phòng CUỐI CÙNG, kém tin cậy nhất trong 3 lớp.
     if enable_solo_detection:
         for i in range(n):
             if results[i]["reason"] != "none":
@@ -622,7 +757,8 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
     return results
 
 
-def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, workdir, strip_audio):
+def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, workdir, strip_audio,
+                        tail_match_threshold=DEFAULT_MATCH_THRESHOLD):
     """Xử lý 1 video: cắt outro (nếu xác định được) + gắn outro của mình
     (NẾU có chọn — `own_outro_path`/`own_info` có thể là None, khi đó chỉ
     cắt outro đối thủ, không gắn gì thêm vào cuối). Tách riêng thành hàm để
@@ -645,6 +781,30 @@ def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, work
         want_audio = (not strip_audio) and info["has_audio"]
 
     content_end = boundary["outro_start"] if boundary["outro_start"] is not None else info["duration"]
+    if content_end < MIN_CONTENT_SECONDS:
+        # An toàn: nếu ranh giới xác định được lại NUỐT GẦN HẾT/HẾT video
+        # (dưới 1 giây nội dung còn lại) — gần như chắc chắn là nhận diện
+        # sai (không video quảng cáo thật nào chỉ có <1s nội dung thật),
+        # không phải ai đó cố tình tải lên 1 video toàn outro. Trả về giữ
+        # nguyên cả video thay vì tạo ra 1 đoạn nội dung RỖNG — đã gặp thật:
+        # đoạn rỗng khiến bước ghép clip (concat) sau đó lỗi hẳn ("Output
+        # file does not contain any stream"), làm HỎNG CẢ MẺ xử lý dù chỉ 1
+        # video trong đó bị nhận diện sai.
+        content_end = info["duration"]
+        boundary = {"outro_start": None, "reason": "none"}
+
+    if boundary["reason"] in ("matched", "solo_badge") and content_end < info["duration"] - 0.05:
+        # Cắt được ĐỦ TIN CẬY (khớp chéo trong mẻ, hoặc dò-đơn-lẻ có badge
+        # xác nhận — KHÔNG lưu từ "library_match"/"solo_scene" để tránh
+        # thư viện tự lưu lại chính nó hoặc lưu outro kém tin cậy) — tự lưu
+        # đoạn outro vào thư viện dùng chung, để lần sau video khác cùng
+        # outro này (dù không có gì so khớp chéo trong mẻ) vẫn nhận ra
+        # được. Lỗi ở bước này KHÔNG được làm hỏng video đang xử lý.
+        try:
+            _save_to_known_library(p, content_end, info["duration"], tail_match_threshold, clips_dir)
+        except Exception:
+            pass
+
     all_clips = split_clips(
         p, [(0.0, content_end)], clips_dir, info["has_audio"], want_audio, 0.0,
         target_spec, name_prefix=f"content{i:02d}",
@@ -708,13 +868,22 @@ def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
         futures = {
             executor.submit(
                 _process_one_video, i, p, b, own_outro_path, own_info, clips_dir, workdir, strip_audio,
+                tail_match_threshold,
             ): i
             for i, (p, b) in enumerate(zip(paths, boundaries))
         }
         done_count = 0
         for future in concurrent.futures.as_completed(futures):
             i = futures[future]
-            result = future.result()
+            try:
+                result = future.result()
+            except Exception as e:
+                # 1 video lỗi (vd ffmpeg gặp file hỏng) KHÔNG được làm sập
+                # cả mẻ — ghi nhận lỗi RIÊNG cho đúng video này, các video
+                # khác trong mẻ vẫn tiếp tục xử lý bình thường (đã gặp
+                # thật: 1 video lỗi làm mất hết tiến độ 29 video còn lại
+                # trong mẻ 30 video, dù chúng không hề có vấn đề gì).
+                result = {"path": None, "outro_cut_seconds": 0.0, "reason": "error", "error": str(e)}
             made[i] = result
             done_count += 1
             if on_source:

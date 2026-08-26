@@ -938,6 +938,34 @@ def render_outro_swap(mode="full"):
             else:
                 chosen_outro_path = picked[0]
 
+    # Thư viện outro đối thủ ĐÃ TỪNG NHẬN DIỆN ĐƯỢC — tự lưu mỗi khi cắt
+    # thành công đủ tin cậy (xem outro_core._save_to_known_library), giúp
+    # video sau này CÙNG outro nhưng không có gì để so khớp chéo trong mẻ
+    # vẫn nhận ra được (reason="library_match"). Dùng chung cho cả team,
+    # không chia theo người — ai gặp trước cũng giúp ích được người sau.
+    if mode in ("cut", "full"):
+        known_outros = outro_core.list_known_outros()
+        with st.expander(f"📚 Thư viện outro đã nhận diện ({len(known_outros)})"):
+            if not known_outros:
+                st.caption(
+                    "Chưa có outro nào trong thư viện — tự động thêm vào mỗi khi cắt "
+                    "thành công đủ tin cậy (khớp chéo hoặc dò-đơn-lẻ có badge xác nhận)."
+                )
+            else:
+                st.caption(
+                    "Tự động thêm — video sau này CÙNG outro với 1 mục dưới đây sẽ tự "
+                    "nhận ra được, kể cả khi tải lên chỉ 1 mình (không có gì để so khớp chéo)."
+                )
+                cols = st.columns(4)
+                for idx, f in enumerate(known_outros):
+                    with cols[idx % 4]:
+                        st.video(str(f))
+                        dur = _outro_duration(str(f), f.stat().st_mtime)
+                        st.caption(f"{dur:.1f}s")
+                        if st.button("🗑️ Xoá", key=f"del_known_outro_{f.name}", use_container_width=True):
+                            f.unlink(missing_ok=True)
+                            st.rerun()
+
     # "Tuỳ chọn nâng cao" chỉ liên quan tới bước DÒ/CẮT outro — chế độ
     # "trademark" không chạy bước này nên không cần hiện, dùng giá trị mặc
     # định (không ai đọc tới vì outro_core không được gọi ở chế độ đó).
@@ -1198,6 +1226,11 @@ def render_outro_swap(mode="full"):
                             "(chỉ dò được điểm chuyển cảnh, KHÔNG thấy badge xác nhận — nên xem lại kết "
                             "quả kỹ hơn, độ tin cậy thấp hơn)"
                         )
+                    elif reason == "error":
+                        status.write(
+                            f"[{done}/{total}] ❌ {name}: xử lý lỗi, bỏ qua video này (các video khác trong "
+                            f"mẻ vẫn tiếp tục) — {result.get('error', 'không rõ nguyên nhân')}"
+                        )
                     else:
                         tail = (
                             "video này có thể có 2 outro nối tiếp — kiểm tra lại."
@@ -1251,6 +1284,8 @@ def render_outro_swap(mode="full"):
                     # (không có đoạn nào cần tránh).
                     own_outro_dur = core.ffprobe_info(chosen_outro_path)["duration"] if chosen_outro_path else 0.0
                     for r in made:
+                        if r["path"] is None:
+                            continue  # video này lỗi ở bước trước (reason="error"), không có gì để gắn trademark
                         final_dur = core.ffprobe_info(r["path"])["duration"]
                         skip_after = max(final_dur - own_outro_dur, 0.0)
                         tm_path = r["path"].parent / f"{r['path'].stem}_tm{r['path'].suffix}"
@@ -1263,8 +1298,11 @@ def render_outro_swap(mode="full"):
                         r["path"].unlink(missing_ok=True)
                         r["path"] = tm_path
 
-                new_paths = apply_output_naming([r["path"] for r in made], output_name)
-                for r, new_p in zip(made, new_paths):
+                # Chỉ đặt tên/đổi tên cho các video XỬ LÝ THÀNH CÔNG — video
+                # lỗi (path=None, reason="error") không có gì để đổi tên.
+                ok_results = [r for r in made if r["path"] is not None]
+                new_paths = apply_output_naming([r["path"] for r in ok_results], output_name)
+                for r, new_p in zip(ok_results, new_paths):
                     r["path"] = new_p
 
                 status.update(label="Xong!", state="complete", expanded=False)
@@ -1277,9 +1315,13 @@ def render_outro_swap(mode="full"):
     if st.session_state.outro_run_error:
         st.error(f"Xử lý thất bại: {st.session_state.outro_run_error}")
 
-    if st.session_state.outro_outputs:
+    outro_ok_outputs = [r for r in st.session_state.outro_outputs if r["path"] is not None]
+    outro_failed = [r for r in st.session_state.outro_outputs if r["path"] is None]
+    if outro_failed:
+        st.warning(f"⚠️ {len(outro_failed)} video xử lý lỗi, đã bỏ qua (xem chi tiết lỗi ở log phía trên).")
+    if outro_ok_outputs:
         st.subheader("Kết quả")
-        render_results_grid([r["path"] for r in st.session_state.outro_outputs], "outro_dl")
+        render_results_grid([r["path"] for r in outro_ok_outputs], "outro_dl")
 
 
 def render_logo_cover():
