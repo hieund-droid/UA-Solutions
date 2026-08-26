@@ -217,6 +217,25 @@ def _list_outros(category, scope, user_id=None):
     return sorted(files, key=lambda p: p.name.lower())
 
 
+# Thư viện logo dùng cho tính năng "Trademark bay" — cùng kiểu scope
+# "shared"/"mine" như outro ở trên, nhưng KHÔNG chia theo category (logo
+# dùng chung cho mọi loại trademark, không gắn với 1 app cụ thể như outro).
+LOGO_DIR = Path(__file__).parent / "logos"
+LOGO_DIR.mkdir(exist_ok=True)
+
+
+def _logo_dir_for(scope, user_id=None):
+    d = LOGO_DIR / "shared" if scope == "shared" else LOGO_DIR / "users" / user_id
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _list_logos(scope, user_id=None):
+    d = _logo_dir_for(scope, user_id)
+    files = [f for ext in ("*.png", "*.jpg", "*.jpeg") for f in d.glob(ext)]
+    return sorted(files, key=lambda p: p.name.lower())
+
+
 def _enforce_single_outro_tick(category, just_ticked_name, all_names):
     """Tích 1 outro mới thì TỰ BỎ TÍCH các outro khác cùng loại — mô phỏng
     chọn kiểu radio (chỉ 1 cái được chọn) nhưng vẫn giữ được lưới thumbnail
@@ -226,6 +245,16 @@ def _enforce_single_outro_tick(category, just_ticked_name, all_names):
     for name in all_names:
         if name != just_ticked_name:
             st.session_state[f"outro_tick_{category}_{name}"] = False
+
+
+def _enforce_single_logo_tick(just_ticked_uid, all_uids):
+    """Giống _enforce_single_outro_tick ở trên, dùng cho lưới chọn logo
+    (không có "category" như outro — logo dùng chung cho mọi loại trademark)."""
+    if not st.session_state.get(f"logo_tick_{just_ticked_uid}"):
+        return
+    for uid in all_uids:
+        if uid != just_ticked_uid:
+            st.session_state[f"logo_tick_{uid}"] = False
 
 
 @st.cache_data(show_spinner=False)
@@ -727,14 +756,14 @@ def render_outro_swap(mode="full"):
       - mode="full": như bản gốc trước đây — cắt outro đối thủ + gắn outro
         của mình (tuỳ chọn) + trademark (tuỳ chọn)."""
     titles = {
-        "cut": (":material/content_cut: Cắt outro đối thủ",
+        "cut": (":material/content_cut: Cut Outro",
                 "Chỉ cắt outro đối thủ ở cuối video, KHÔNG gắn gì thêm vào cuối. "
                 "Tải lên ≥2 video CÙNG 1 đối thủ/app cùng lúc để cắt chính xác nhất — "
                 "chỉ có 1 video vẫn thử cắt được nếu dò ra điểm chuyển cảnh/badge cửa hàng ứng dụng."),
-        "trademark": (":material/flare: Trademark bay",
+        "trademark": (":material/flare: Flying Trademark",
                       "Dán trademark (chữ/logo) bay khắp khung hình lên video — "
                       "KHÔNG đụng gì tới outro, video giữ nguyên nội dung + outro gốc."),
-        "full": (":material/auto_awesome: Outro Solution — Đầy đủ",
+        "full": (":material/auto_awesome: Outro Solution — All-in-One",
                  "Cắt outro đối thủ ở cuối video, gắn outro của bạn vào thay thế, có thể thêm trademark. "
                  "Tải lên ≥2 video CÙNG 1 đối thủ/app cùng lúc để cắt chính xác nhất — "
                  "chỉ có 1 video vẫn thử cắt được nếu dò ra điểm chuyển cảnh/badge cửa hàng ứng dụng."),
@@ -937,7 +966,7 @@ def render_outro_swap(mode="full"):
     # biến này ở giá trị rỗng để phần xử lý phía dưới khỏi bị NameError.
     add_trademark = False
     trademark_kind = trademark_text = None
-    trademark_logo_file = None
+    trademark_logo_path = None
     trademark_opacity = trademark_size = trademark_speed = trademark_range = None
     trademark_font_style = "Đậm"
     trademark_text_color = "#FFFFFF"
@@ -945,6 +974,64 @@ def render_outro_swap(mode="full"):
     trademark_path_style = trademark_core.PATH_STYLES[0]
 
     if mode != "cut":
+        # Thư viện logo — quản lý riêng (xem/đổi tên/xoá), tách khỏi phần
+        # CHỌN logo để dùng ngay bên dưới (giống cách "Outro của tôi" tách
+        # khỏi phần chọn outro để cắt/gắn).
+        mine_logo_dir = _logo_dir_for("mine", user_id)
+        with st.expander("🖼️ Logo của tôi"):
+            shared_logos = _list_logos("shared")
+            if shared_logos:
+                st.caption("Dùng chung (cả team, chỉ xem — không sửa/xoá được ở đây)")
+                cols = st.columns(4)
+                for idx, f in enumerate(shared_logos):
+                    with cols[idx % 4]:
+                        st.image(str(f), use_container_width=True)
+                        st.caption(f.stem)
+
+            st.caption("Của tôi (chỉ mình bạn thấy)")
+            mine_logos = _list_logos("mine", user_id)
+            if mine_logos:
+                cols = st.columns(4)
+                for idx, f in enumerate(mine_logos):
+                    with cols[idx % 4]:
+                        st.image(str(f), use_container_width=True)
+                        new_name = st.text_input(
+                            "Tên", value=f.stem, key=f"rename_logo_{f.name}",
+                            label_visibility="collapsed",
+                        )
+                        rcol, dcol = st.columns(2)
+                        if rcol.button("✏️ Đổi tên", key=f"rename_logo_btn_{f.name}", use_container_width=True):
+                            clean_name = _sanitize_name_prefix(new_name)
+                            if not clean_name:
+                                st.error("Tên không được để trống.")
+                            elif clean_name == f.stem:
+                                st.info("Tên không đổi.")
+                            else:
+                                new_path = f.parent / f"{clean_name}{f.suffix}"
+                                if new_path.exists():
+                                    st.error(f"Đã có logo tên '{clean_name}' rồi, chọn tên khác.")
+                                else:
+                                    f.rename(new_path)
+                                    st.rerun()
+                        if dcol.button("🗑️ Xoá", key=f"del_logo_btn_{f.name}", use_container_width=True):
+                            f.unlink(missing_ok=True)
+                            st.rerun()
+            else:
+                st.caption("Chưa có logo riêng nào — thêm ở ô bên dưới, hoặc tải trực tiếp lúc chọn logo cho trademark.")
+
+            new_logos_multi = st.file_uploader(
+                "Thêm logo mới vào thư viện", type=["png", "jpg", "jpeg"], accept_multiple_files=True,
+                key="logo_upload_multi",
+            )
+            if new_logos_multi:
+                sig = tuple((f.name, f.size) for f in new_logos_multi)
+                if st.session_state.get("logo_saved_sig_multi") != sig:
+                    for f in new_logos_multi:
+                        (mine_logo_dir / f.name).write_bytes(f.getvalue())
+                    st.session_state["logo_saved_sig_multi"] = sig
+                    st.success(f"Đã thêm {len(new_logos_multi)} logo vào thư viện.")
+                    st.rerun()
+
         expander_title = "🏷️ Cấu hình trademark bay" if mode == "trademark" else "🏷️ Thêm trademark bay (tuỳ chọn)"
         with st.expander(expander_title, expanded=(mode == "trademark")):
             if mode == "trademark":
@@ -972,10 +1059,45 @@ def render_outro_swap(mode="full"):
                             "Màu viền", "#000000", key="outro_trademark_stroke_color",
                         )
                     else:
-                        trademark_logo_file = st.file_uploader(
-                            "Ảnh logo (khuyến khích PNG nền trong suốt)", type=["png", "jpg", "jpeg"],
-                            key="outro_trademark_logo",
+                        combined_logos = (
+                            [("shared", f) for f in _list_logos("shared")]
+                            + [("mine", f) for f in _list_logos("mine", user_id)]
                         )
+                        if combined_logos:
+                            st.caption("Chọn logo đã lưu:")
+                            all_logo_uids = [f"{scope}|{f.name}" for scope, f in combined_logos]
+                            selected_logo_uid = next(
+                                (u for u in all_logo_uids if st.session_state.get(f"logo_tick_{u}")), None,
+                            )
+                            logo_cols = st.columns(4)
+                            for idx, (scope, f) in enumerate(combined_logos):
+                                uid = f"{scope}|{f.name}"
+                                with logo_cols[idx % 4]:
+                                    st.image(str(f), use_container_width=True)
+                                    tag = " · chung" if scope == "shared" else ""
+                                    if st.checkbox(
+                                        f"{f.stem}{tag}", key=f"logo_tick_{uid}",
+                                        on_change=_enforce_single_logo_tick, args=(uid, all_logo_uids),
+                                    ):
+                                        trademark_logo_path = f
+                        else:
+                            st.caption("Chưa có logo nào trong thư viện — tải lên ở ô bên dưới.")
+
+                        new_logo_file = st.file_uploader(
+                            "Hoặc tải logo mới (khuyến khích PNG nền trong suốt) — tự lưu lại để "
+                            "dùng cho lần sau, không cần tải lại mỗi lần",
+                            type=["png", "jpg", "jpeg"], key="outro_trademark_logo",
+                        )
+                        if new_logo_file:
+                            sig = (new_logo_file.name, new_logo_file.size)
+                            if st.session_state.get("logo_saved_sig_single") != sig:
+                                mine_logo_dir = _logo_dir_for("mine", user_id)
+                                saved_path = mine_logo_dir / new_logo_file.name
+                                saved_path.write_bytes(new_logo_file.getvalue())
+                                st.session_state["logo_saved_sig_single"] = sig
+                                # Tự chọn LUÔN logo vừa tải lên — đỡ phải tick lại thủ công.
+                                st.session_state[f"logo_tick_mine|{new_logo_file.name}"] = True
+                                st.rerun()
                     trademark_opacity = st.slider("Độ mờ (%)", 10, 100, 70, key="outro_trademark_opacity")
                     trademark_size = st.slider(
                         "Độ lớn (% chiều rộng video)", 5, 40, 15, key="outro_trademark_size",
@@ -1002,11 +1124,11 @@ def render_outro_swap(mode="full"):
                             text_color=_hex_to_rgba(trademark_text_color),
                             stroke_color=_hex_to_rgba(trademark_stroke_color),
                         )
-                    elif trademark_kind == "Logo/hình ảnh" and trademark_logo_file is not None:
-                        tmp_logo_dir = Path(tempfile.mkdtemp(prefix="tm_logo_preview_"))
-                        tmp_logo = tmp_logo_dir / f"logo{Path(trademark_logo_file.name).suffix}"
-                        tmp_logo.write_bytes(trademark_logo_file.getvalue())
-                        preview_overlay = trademark_core.load_logo_overlay(tmp_logo)
+                    elif trademark_kind == "Logo/hình ảnh" and trademark_logo_path is not None:
+                        # Logo lấy thẳng từ thư viện (đã là file thật trên đĩa) —
+                        # không cần ghi ra file tạm nữa như trước (lúc còn bắt
+                        # buộc upload lại mỗi lần).
+                        preview_overlay = trademark_core.load_logo_overlay(trademark_logo_path)
 
                     if preview_overlay is None:
                         st.info("Nhập chữ hoặc tải logo để xem trước.")
@@ -1102,7 +1224,7 @@ def render_outro_swap(mode="full"):
 
                 trademark_ready = add_trademark and (
                     (trademark_kind == "Chữ" and trademark_text and trademark_text.strip())
-                    or (trademark_kind == "Logo/hình ảnh" and trademark_logo_file is not None)
+                    or (trademark_kind == "Logo/hình ảnh" and trademark_logo_path is not None)
                 )
                 if add_trademark and not trademark_ready:
                     status.write("⚠️ Chưa nhập chữ/chưa chọn logo trademark — bỏ qua bước gắn trademark.")
@@ -1115,9 +1237,9 @@ def render_outro_swap(mode="full"):
                             stroke_color=_hex_to_rgba(trademark_stroke_color),
                         )
                     else:
-                        logo_path = workdir / f"trademark_logo_{uuid.uuid4().hex[:8]}{Path(trademark_logo_file.name).suffix}"
-                        logo_path.write_bytes(trademark_logo_file.getvalue())
-                        overlay_rgba = trademark_core.load_logo_overlay(logo_path)
+                        # Logo lấy thẳng từ thư viện (file thật, đã lưu sẵn) —
+                        # không cần ghi lại ra workdir như trước nữa.
+                        overlay_rgba = trademark_core.load_logo_overlay(trademark_logo_path)
 
                     # Không cho trademark bay đè lên đoạn outro của bạn ở
                     # cuối video kết quả (nếu có chọn outro) — chỉ gắn
@@ -1339,11 +1461,11 @@ NAV_ITEMS = [
     {
         "key": "outro", "label": "Outro Solution", "icon": "content_cut",
         "children": [
-            {"key": "outro_cut", "label": "Cắt outro đối thủ", "icon": "content_cut",
+            {"key": "outro_cut", "label": "Cut Outro", "icon": "content_cut",
              "fn": lambda: render_outro_swap(mode="cut")},
-            {"key": "outro_trademark", "label": "Trademark bay", "icon": "flare",
+            {"key": "outro_trademark", "label": "Flying Trademark", "icon": "flare",
              "fn": lambda: render_outro_swap(mode="trademark")},
-            {"key": "outro_full", "label": "Đầy đủ", "icon": "auto_awesome",
+            {"key": "outro_full", "label": "All-in-One", "icon": "auto_awesome",
              "fn": lambda: render_outro_swap(mode="full")},
         ],
     },
@@ -1392,6 +1514,15 @@ def _sidebar_state_css(collapsed, active_key, expanded_groups):
         f'[class*="st-key-nav_"] button p {{ display: {label_display}; }}',
         f'.sidebar-title, .sidebar-subtitle, .sidebar-user-email, .st-key-logout_btn button p {{ display: {text_display}; }}',
     ]
+    if collapsed:
+        # Chữ đã ẩn hết (chỉ còn icon) — nhưng nút vẫn canh trái theo CSS
+        # tĩnh (justify-content: flex-start, dùng cho lúc CÒN chữ), khiến
+        # icon dồn lệch về mép trái cột hẹp thay vì nằm giữa, nhìn lệch
+        # hẳn — ép về giữa cho đồng đều khi chỉ còn icon.
+        rules.append(
+            '[class*="st-key-nav_"] button { justify-content: center !important; '
+            'padding-left: 0 !important; padding-right: 0 !important; }'
+        )
     for item in NAV_ITEMS:
         children = item.get("children", [])
         child_active = any(c["key"] == active_key for c in children)
@@ -1406,7 +1537,8 @@ def _sidebar_state_css(collapsed, active_key, expanded_groups):
         else:
             rules.append(f'{cls} span[data-testid="stIconMaterial"] {{ color: #9aa0a6; }}')
         for child in children:
-            child_cls = f'.st-key-nav_{child["key"]} button'
+            wrapper_cls = f'.st-key-nav_{child["key"]}'
+            child_cls = f'{wrapper_cls} button'
             # Thụt vào + chữ nhỏ hơn 1 chút cho mục con — phân biệt trực
             # quan với mục cha, giống kiểu dropdown/accordion quen thuộc.
             rules.append(f'{child_cls} {{ padding-left: 2.4rem !important; font-size: 0.86rem; }}')
@@ -1417,10 +1549,25 @@ def _sidebar_state_css(collapsed, active_key, expanded_groups):
                 )
             else:
                 rules.append(f'{child_cls} span[data-testid="stIconMaterial"] {{ color: #9aa0a6; }}')
-            # Ẩn hẳn mục con khi: sidebar đang thu gọn (icon-only, không đủ
-            # chỗ hiện chữ) HOẶC nhóm cha của nó đang đóng.
-            if collapsed or item["key"] not in expanded_groups:
-                rules.append(f'.st-key-nav_{child["key"]} {{ display: none !important; }}')
+            # Đóng/mở mục con MƯỢT bằng max-height + opacity thay vì
+            # display:none bật/tắt đột ngột (đã gặp phản hồi thật: "dropdown
+            # không mượt") — khai bao transition CÙNG lúc với state hiện tại
+            # trong 1 luật, để mỗi lần render lại <style> trình duyệt vẫn
+            # nhận ra đây là 1 thay đổi giá trị cần nội suy động, không phải
+            # 1 rule hoàn toàn mới. margin về 0 khi ẩn để không để lại
+            # khoảng trống thừa giữa các nút.
+            show_child = not collapsed and item["key"] in expanded_groups
+            rules.append(
+                f'{wrapper_cls} {{ transition: max-height 0.22s ease, opacity 0.16s ease, '
+                f'margin 0.22s ease; overflow: hidden; }}'
+            )
+            if show_child:
+                rules.append(f'{wrapper_cls} {{ max-height: 52px; opacity: 1; }}')
+            else:
+                rules.append(
+                    f'{wrapper_cls} {{ max-height: 0px; opacity: 0; margin-top: 0 !important; '
+                    f'margin-bottom: 0 !important; pointer-events: none; }}'
+                )
     return "<style>" + "\n".join(rules) + "</style>"
 
 
