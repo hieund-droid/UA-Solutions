@@ -54,7 +54,6 @@ from datetime import date, timedelta
 COUNTRIES = {
     "US": ("United States", 1), "UK": ("United Kingdom", 1), "Canada": ("Canada", 1),
     "Australia": ("Australia", 1), "Germany": ("Germany", 1), "France": ("France", 1),
-    "Japan": ("Japan", 1), "South Korea": ("South Korea", 1),
     "India": ("India", 2), "Brazil": ("Brazil", 2), "Mexico": ("Mexico", 2),
     "Indonesia": ("Indonesia", 2), "Philippines": ("Philippines", 2),
 }
@@ -67,7 +66,7 @@ CATEGORY_LABELS = {
 # logic lọc/tính ngày.
 COUNTRY_FLAGS = {
     "US": "🇺🇸", "UK": "🇬🇧", "Canada": "🇨🇦", "Australia": "🇦🇺", "Germany": "🇩🇪",
-    "France": "🇫🇷", "Japan": "🇯🇵", "South Korea": "🇰🇷", "India": "🇮🇳", "Brazil": "🇧🇷",
+    "France": "🇫🇷", "India": "🇮🇳", "Brazil": "🇧🇷",
     "Mexico": "🇲🇽", "Indonesia": "🇮🇩", "Philippines": "🇵🇭",
 }
 
@@ -81,23 +80,29 @@ COUNTRY_FLAGS = {
 # mỗi mục có "source" là link đã thực sự tra cứu được.
 #
 # date_type="explicit" (ngày âm lịch/tôn giáo/lịch bán lẻ tự đặt — Tết,
-# Diwali, Eid, Seollal, Chuseok...) SẼ CŨ DẦN theo thời gian — needs_update()
-# tự phát hiện mục nào đã qua ngày lưu sẵn để cảnh báo cập nhật lại, xem
+# Diwali, Eid, Nyepi...) SẼ CŨ DẦN theo thời gian — needs_update() tự phát
+# hiện mục nào đã qua ngày lưu sẵn để cảnh báo cập nhật lại, xem
 # render_events() trong app.py.
+#
+# 2026-08-27, sau đợt mở rộng: BỎ HẲN Japan/South Korea khỏi COUNTRIES/
+# COUNTRY_FLAGS/EVENTS theo yêu cầu thực tế — 28 sự kiện chỉ-riêng-2-nước-này
+# bị xoá hẳn (không phải ẩn), các mục gộp nhiều nước (New Year's Day,
+# Christmas Day, Valentine's Day...) chỉ bỏ bớt 2 nước này khỏi "countries",
+# vẫn giữ các nước còn lại. Nếu cần lại, xem git history.
 EVENTS = [
-    {"name": "New Year's Day", "countries": ['US', 'UK', 'Canada', 'Australia', 'Germany', 'France', 'Japan', 'South Korea', 'Brazil', 'Mexico', 'Indonesia', 'Philippines'], "category": 'official', "date_type": 'fixed', "month": 1, "day": 1, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
+    {"name": "New Year's Day", "countries": ['US', 'UK', 'Canada', 'Australia', 'Germany', 'France', 'Brazil', 'Mexico', 'Indonesia', 'Philippines'], "category": 'official', "date_type": 'fixed', "month": 1, "day": 1, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
     {"name": 'Martin Luther King Jr. Day', "countries": ['US'], "category": 'official', "date_type": 'nth_weekday', "month": 1, "weekday": 0, "nth": 3, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
     {"name": 'Presidents Day', "countries": ['US'], "category": 'official', "date_type": 'nth_weekday', "month": 2, "weekday": 0, "nth": 3, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
-    {"name": "Valentine's Day", "countries": ['US', 'UK', 'Canada', 'Australia', 'Japan', 'India', 'Mexico', 'Philippines', 'Germany', 'France'], "category": 'unofficial', "date_type": 'fixed', "month": 2, "day": 14, "source": 'https://en.wikipedia.org/wiki/Valentine%27s_Day'},
+    {"name": "Valentine's Day", "countries": ['US', 'UK', 'Canada', 'Australia', 'India', 'Mexico', 'Philippines', 'Germany', 'France'], "category": 'unofficial', "date_type": 'fixed', "month": 2, "day": 14, "source": 'https://en.wikipedia.org/wiki/Valentine%27s_Day'},
     {"name": "Galentine's Day", "countries": ['US'], "category": 'unofficial', "date_type": 'fixed', "month": 2, "day": 13, "source": 'https://en.wikipedia.org/wiki/Galentine%27s_Day_(observance)', "note": 'Viral từ phim Parks and Recreation, được thương mại hoá rộng rãi từ ~2017-2020'},
     {"name": 'Super Bowl Sunday', "countries": ['US'], "category": 'unofficial', "date_type": 'explicit', "date": '2026-02-08', "source": 'https://sports.yahoo.com', "note": 'Ngày do NFL ấn định hàng năm, không theo quy tắc cố định'},
     {"name": 'Memorial Day', "countries": ['US'], "category": 'official', "date_type": 'nth_weekday', "month": 5, "weekday": 0, "nth": -1, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
     {"name": 'Juneteenth', "countries": ['US'], "category": 'official', "date_type": 'fixed', "month": 6, "day": 19, "source": 'https://timeanddate.com/holidays/us/juneteenth'},
     {"name": 'Independence Day', "countries": ['US'], "category": 'official', "date_type": 'fixed', "month": 7, "day": 4, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
-    {"name": 'Labor Day', "countries": ['US'], "category": 'official', "date_type": 'nth_weekday', "month": 9, "weekday": 0, "nth": 1, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
+    {"name": 'Labor Day', "local_name": 'Labour Day', "countries": ['US', 'Canada'], "category": 'official', "date_type": 'nth_weekday', "month": 9, "weekday": 0, "nth": 1, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
     {"name": 'Halloween', "countries": ['US', 'UK', 'Canada', 'Australia', 'Germany', 'France'], "category": 'unofficial', "date_type": 'fixed', "month": 10, "day": 31, "source": 'https://en.wikipedia.org/wiki/Halloween'},
     {"name": 'Thanksgiving Day', "countries": ['US'], "category": 'official', "date_type": 'nth_weekday', "month": 11, "weekday": 3, "nth": 4, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
-    {"name": 'Christmas Day', "countries": ['US', 'UK', 'Canada', 'Australia', 'Germany', 'France', 'South Korea', 'India', 'Brazil', 'Mexico', 'Indonesia', 'Philippines'], "category": 'official', "date_type": 'fixed', "month": 12, "day": 25, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
+    {"name": 'Christmas Day', "countries": ['US', 'UK', 'Canada', 'Australia', 'Germany', 'France', 'India', 'Brazil', 'Mexico', 'Indonesia', 'Philippines'], "category": 'official', "date_type": 'fixed', "month": 12, "day": 25, "source": 'https://remitly.com/blog/lifestyle-culture/us-federal-holidays'},
     {"name": 'Mothering Sunday', "countries": ['UK'], "category": 'unofficial', "date_type": 'easter_offset', "offset_days": -21, "source": 'https://awarenessdays.com/awareness-days-calendar/mothers-day-uk'},
     {"name": 'Good Friday', "countries": ['UK', 'Canada', 'Australia', 'Germany', 'Brazil', 'Philippines', 'Indonesia'], "category": 'official', "date_type": 'easter_offset', "offset_days": -2, "source": 'https://time-and-date.uk.com/uk-bank-holidays-2026'},
     {"name": 'Easter Monday', "countries": ['UK', 'Australia', 'Germany', 'France'], "category": 'official', "date_type": 'easter_offset', "offset_days": 1, "source": 'https://time-and-date.uk.com/uk-bank-holidays-2026'},
@@ -109,12 +114,10 @@ EVENTS = [
     {"name": 'Victoria Day', "countries": ['Canada'], "category": 'official', "date_type": 'explicit', "date": '2026-05-18', "source": 'https://remitly.com/blog/en-ca/lifestyle-and-culture/federal-statutory-holidays-in-canada-calendar', "note": 'Quy tắc: thứ Hai liền TRƯỚC ngày 25/5 — cần cập nhật tay mỗi năm'},
     {"name": "Mother's Day", "countries": ['Canada', 'Australia', 'Germany', 'Brazil', 'US'], "category": 'unofficial', "date_type": 'nth_weekday', "month": 5, "weekday": 6, "nth": 2, "source": 'https://twinkl.com/event/mothers-day-canada-2026'},
     {"name": 'Canada Day', "countries": ['Canada'], "category": 'official', "date_type": 'fixed', "month": 7, "day": 1, "source": 'https://remitly.com/blog/en-ca/lifestyle-and-culture/federal-statutory-holidays-in-canada-calendar'},
-    {"name": 'Labour Day', "countries": ['Canada'], "category": 'official', "date_type": 'nth_weekday', "month": 9, "weekday": 0, "nth": 1, "source": 'https://remitly.com/blog/en-ca/lifestyle-and-culture/federal-statutory-holidays-in-canada-calendar'},
     {"name": 'National Day for Truth and Reconciliation', "countries": ['Canada'], "category": 'official', "date_type": 'fixed', "month": 9, "day": 30, "source": 'https://canada.ca/en/canadian-heritage/campaigns/national-day-truth-reconciliation.html', "note": 'Chỉ bắt buộc nghỉ với lao động thuộc quản lý liên bang + 1 số tỉnh bang, không toàn quốc'},
     {"name": 'Thanksgiving (Canada)', "countries": ['Canada'], "category": 'official', "date_type": 'nth_weekday', "month": 10, "weekday": 0, "nth": 2, "source": 'https://remitly.com/blog/en-ca/lifestyle-and-culture/federal-statutory-holidays-in-canada-calendar'},
-    {"name": 'Remembrance Day', "countries": ['Canada'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 11, "source": 'https://remitly.com/blog/en-ca/lifestyle-and-culture/federal-statutory-holidays-in-canada-calendar'},
     {"name": 'Rose Monday', "local_name": 'Rosenmontag', "countries": ['Germany'], "category": 'unofficial', "date_type": 'easter_offset', "offset_days": -48, "source": 'https://cute-calendar.com', "note": 'Chỉ nghỉ thực tế ở vùng Rhineland (Köln, Düsseldorf, Bonn, Mainz)'},
-    {"name": 'Labour Day', "countries": ['Germany', 'France', 'Brazil', 'Mexico'], "category": 'official', "date_type": 'fixed', "month": 5, "day": 1, "source": 'https://publicholidays.de/2026-dates'},
+    {"name": 'Labour Day', "countries": ['Germany', 'France', 'Brazil', 'Mexico', 'Philippines'], "category": 'official', "date_type": 'fixed', "month": 5, "day": 1, "source": 'https://publicholidays.de/2026-dates', "note": 'Philippines gọi là "Labor Day" (chính tả Mỹ) — cùng "Ngày Quốc tế Lao động"'},
     {"name": 'Ascension Day', "countries": ['Germany', 'France'], "category": 'official', "date_type": 'easter_offset', "offset_days": 39, "source": 'https://publicholidays.de/2026-dates'},
     {"name": 'Whit Monday', "countries": ['Germany', 'France'], "category": 'official', "date_type": 'easter_offset', "offset_days": 50, "source": 'https://publicholidays.de/2026-dates'},
     {"name": 'German Unity Day', "local_name": 'Tag der Deutschen Einheit', "countries": ['Germany'], "category": 'official', "date_type": 'fixed', "month": 10, "day": 3, "source": 'https://publicholidays.de/2026-dates'},
@@ -124,30 +127,8 @@ EVENTS = [
     {"name": 'Bastille Day', "local_name": 'Fête Nationale', "countries": ['France'], "category": 'official', "date_type": 'fixed', "month": 7, "day": 14, "source": 'https://franceinfo.fr'},
     {"name": 'Assumption Day', "local_name": 'Assomption', "countries": ['France'], "category": 'official', "date_type": 'fixed', "month": 8, "day": 15, "source": 'https://franceinfo.fr'},
     {"name": 'Back-to-school', "local_name": 'Rentrée scolaire', "countries": ['France'], "category": 'unofficial', "date_type": 'fixed', "month": 9, "day": 1, "source": 'https://info.gouv.fr', "note": 'Cao điểm mua sắm đồ dùng học tập'},
-    {"name": "All Saints' Day", "local_name": 'Toussaint', "countries": ['France'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 1, "source": 'https://franceinfo.fr'},
-    {"name": 'Armistice Day', "local_name": "Jour d'Armistice", "countries": ['France'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 11, "source": 'https://franceinfo.fr'},
+    {"name": "All Saints' Day", "local_name": 'Undas', "countries": ['France', 'Philippines'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 1, "source": 'https://franceinfo.fr', "note": 'Undas — tên gọi dân gian ở Philippines, dịp về quê/thăm mộ lớn nhất năm ở đó'},
     {"name": 'Beaujolais Nouveau Day', "countries": ['France'], "category": 'unofficial', "date_type": 'nth_weekday', "month": 11, "weekday": 3, "nth": 3, "source": 'https://nationaltoday.com/beaujolais-nouveau-day'},
-    {"name": 'Coming of Age Day', "local_name": '成人の日', "countries": ['Japan'], "category": 'official', "date_type": 'nth_weekday', "month": 1, "weekday": 0, "nth": 2, "source": 'https://nippon.com/en/japan-data/h02302'},
-    {"name": 'National Foundation Day', "local_name": '建国記念の日', "countries": ['Japan'], "category": 'official', "date_type": 'fixed', "month": 2, "day": 11, "source": 'https://nippon.com/en/japan-data/h02794'},
-    {"name": "Emperor's Birthday", "local_name": '天皇誕生日', "countries": ['Japan'], "category": 'official', "date_type": 'fixed', "month": 2, "day": 23, "source": 'https://nippon.com/en/japan-data/h02794'},
-    {"name": 'White Day', "countries": ['Japan', 'South Korea'], "category": 'unofficial', "date_type": 'fixed', "month": 3, "day": 14, "source": 'https://time.com'},
-    {"name": 'Golden Week', "local_name": 'ゴールデンウィーク', "countries": ['Japan'], "category": 'official', "date_type": 'explicit', "date": '2026-04-29', "source": 'https://nippon.com/en/japan-data/h02302', "note": 'Chuỗi nghỉ lễ dài nhất năm, kéo dài tới 6/5/2026'},
-    {"name": 'Marine Day', "local_name": '海の日', "countries": ['Japan'], "category": 'official', "date_type": 'nth_weekday', "month": 7, "weekday": 0, "nth": 3, "source": 'https://nippon.com/en/japan-data/h02794'},
-    {"name": 'Mountain Day', "local_name": '山の日', "countries": ['Japan'], "category": 'official', "date_type": 'fixed', "month": 8, "day": 11, "source": 'https://nippon.com/en/japan-data/h02794'},
-    {"name": 'Obon', "local_name": 'お盆', "countries": ['Japan'], "category": 'unofficial', "date_type": 'fixed', "month": 8, "day": 13, "source": 'https://jrailpass.com', "note": 'Không phải quốc lễ nhưng cao điểm di chuyển/nghỉ cả nước, ~13-16/8'},
-    {"name": 'Respect for the Aged Day', "local_name": '敬老の日', "countries": ['Japan'], "category": 'official', "date_type": 'nth_weekday', "month": 9, "weekday": 0, "nth": 3, "source": 'https://en.japantravel.com'},
-    {"name": 'Christmas Day', "countries": ['Japan'], "category": 'unofficial', "date_type": 'fixed', "month": 12, "day": 25, "source": 'https://nippon.com', "note": 'Không phải quốc lễ (vẫn đi làm) nhưng thương mại hoá mạnh, gắn với hẹn hò/quà tặng'},
-    {"name": 'Seollal (Lunar New Year)', "local_name": '설날', "countries": ['South Korea'], "category": 'official', "date_type": 'explicit', "date": '2026-02-16', "source": 'https://publicholidays.co.kr/seollal', "note": '3 ngày (16-18/2/2026), mùa biếu quà/di chuyển lớn nhất năm'},
-    {"name": 'Independence Movement Day', "local_name": '삼일절', "countries": ['South Korea'], "category": 'official', "date_type": 'fixed', "month": 3, "day": 1, "source": 'https://calendarific.com/holidays/2027/KR'},
-    {"name": 'Black Day', "local_name": '블랙데이', "countries": ['South Korea'], "category": 'unofficial', "date_type": 'fixed', "month": 4, "day": 14, "source": 'https://en.wikipedia.org/wiki/Black_Day_(South_Korea)', "note": 'Ngày người độc thân ăn mì tương đen — viral, được biết rộng rãi'},
-    {"name": "Buddha's Birthday", "local_name": '석가탄신일', "countries": ['South Korea'], "category": 'official', "date_type": 'explicit', "date": '2026-05-24', "source": 'https://time.now/holidays/south-korea/buddhas-birthday'},
-    {"name": "Children's Day", "local_name": '어린이날', "countries": ['South Korea'], "category": 'official', "date_type": 'fixed', "month": 5, "day": 5, "source": 'https://calendarific.com/holidays/2027/KR'},
-    {"name": 'Memorial Day', "local_name": '현충일', "countries": ['South Korea'], "category": 'official', "date_type": 'fixed', "month": 6, "day": 6, "source": 'https://calendarific.com/holidays/2027/KR'},
-    {"name": 'Liberation Day', "local_name": '광복절', "countries": ['South Korea'], "category": 'official', "date_type": 'fixed', "month": 8, "day": 15, "source": 'https://calendarific.com/holidays/2027/KR'},
-    {"name": 'Chuseok', "local_name": '추석', "countries": ['South Korea'], "category": 'official', "date_type": 'explicit', "date": '2026-09-24', "source": 'https://publicholidays.co.kr/chuseok', "note": '3 ngày (24-26/9/2026), mùa biếu quà lớn nhất năm (như Tết Trung thu + Lễ Tạ ơn gộp lại)'},
-    {"name": 'National Foundation Day', "local_name": '개천절', "countries": ['South Korea'], "category": 'official', "date_type": 'fixed', "month": 10, "day": 3, "source": 'https://calendarific.com/holidays/2027/KR'},
-    {"name": 'Hangeul Day', "local_name": '한글날', "countries": ['South Korea'], "category": 'official', "date_type": 'fixed', "month": 10, "day": 9, "source": 'https://calendarific.com/holidays/2027/KR'},
-    {"name": 'Pepero Day', "local_name": '빼빼로데이', "countries": ['South Korea'], "category": 'unofficial', "date_type": 'fixed', "month": 11, "day": 11, "source": 'https://en.wikipedia.org/wiki/Pepero_Day', "note": 'Ngày "day marketing" lớn nhất Hàn Quốc, do Lotte khởi xướng'},
     {"name": 'Australia Day', "countries": ['Australia'], "category": 'official', "date_type": 'fixed', "month": 1, "day": 26, "source": 'https://fairwork.gov.au/employment-conditions/public-holidays/2026-public-holidays'},
     {"name": 'Anzac Day', "countries": ['Australia'], "category": 'official', "date_type": 'fixed', "month": 4, "day": 25, "source": 'https://fairwork.gov.au/employment-conditions/public-holidays/2026-public-holidays'},
     {"name": "Father's Day (Australia)", "countries": ['Australia'], "category": 'unofficial', "date_type": 'nth_weekday', "month": 9, "weekday": 6, "nth": 1, "source": 'https://manofmany.com/culture/fathers-day-australia', "note": 'Khác Mỹ/UK (tháng 6) — Úc là Chủ nhật đầu tháng 9'},
@@ -155,8 +136,8 @@ EVENTS = [
     {"name": 'Makar Sankranti', "countries": ['India'], "category": 'official', "date_type": 'fixed', "month": 1, "day": 14, "source": 'https://indiatvnews.com/lifestyle/spirituality/makar-sankranti-2026-date-january-14-or-15-muhurat-explained-2026-01-14-1025793'},
     {"name": 'Republic Day', "countries": ['India'], "category": 'official', "date_type": 'fixed', "month": 1, "day": 26, "source": 'https://cleartax.in/s/government-holidays-2026'},
     {"name": 'Holi', "countries": ['India'], "category": 'official', "date_type": 'explicit', "date": '2026-03-04', "source": 'https://cleartax.in/s/government-holidays-2026'},
-    {"name": 'Eid al-Fitr', "countries": ['India'], "category": 'official', "date_type": 'explicit', "date": '2026-03-21', "source": 'https://cleartax.in/s/government-holidays-2026', "note": 'Ngày tạm tính (theo quan sát mặt trăng), có thể lệch 1 ngày tới sát ngày mới chốt chính thức'},
-    {"name": 'Eid al-Adha (Bakrid)', "countries": ['India'], "category": 'official', "date_type": 'explicit', "date": '2026-05-27', "source": 'https://cleartax.in/s/government-holidays-2026', "note": 'Ngày tạm tính, theo quan sát mặt trăng'},
+    {"name": 'Eid al-Fitr', "local_name": 'Lebaran', "countries": ['India', 'Indonesia'], "category": 'official', "date_type": 'explicit', "date": '2026-03-21', "source": 'https://cleartax.in/s/government-holidays-2026', "note": 'Lebaran — tên gọi ở Indonesia. Philippines quan sát trăng riêng, ra ngày 20/3 (lệch 1 ngày) nên KHÔNG gộp vào đây'},
+    {"name": 'Eid al-Adha', "countries": ['India', 'Indonesia', 'Philippines'], "category": 'official', "date_type": 'explicit', "date": '2026-05-27', "source": 'https://cleartax.in/s/government-holidays-2026', "note": 'Ấn Độ gọi là "Bakrid", Philippines gọi là "Eid\'l Adha" — cùng 1 lễ Hồi giáo, ngày đã khớp giữa 3 nước'},
     {"name": 'Independence Day', "countries": ['India'], "category": 'official', "date_type": 'fixed', "month": 8, "day": 15, "source": 'https://cleartax.in/s/government-holidays-2026'},
     {"name": 'Friendship Day (India)', "countries": ['India'], "category": 'unofficial', "date_type": 'nth_weekday', "month": 8, "weekday": 6, "nth": 1, "source": 'https://lovelydesign.in/blog/friendship-day-2026-date-history-why-august-first-sunday', "note": 'Quy ước riêng của Ấn Độ (Chủ nhật đầu tháng 8), phổ biến từ phim Bollywood 1998'},
     {"name": 'Raksha Bandhan', "countries": ['India'], "category": 'unofficial', "date_type": 'explicit', "date": '2026-08-28', "source": 'https://rakhisale.com/when-is-rakhi.asp', "note": 'Không phải quốc lễ nhưng dịp tặng quà anh chị em lớn'},
@@ -172,7 +153,7 @@ EVENTS = [
     {"name": "Father's Day", "local_name": 'Dia dos Pais', "countries": ['Brazil'], "category": 'unofficial', "date_type": 'nth_weekday', "month": 8, "weekday": 6, "nth": 2, "source": 'https://calendarr.com/brasil/dia-dos-pais'},
     {"name": "Children's Day / N. Sra. Aparecida", "countries": ['Brazil'], "category": 'official', "date_type": 'fixed', "month": 10, "day": 12, "source": 'https://oantagonista.com.br'},
     {"name": 'Black Consciousness Day', "countries": ['Brazil'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 20, "source": 'https://eskimo.travel/en/blog/brazil-public-holidays'},
-    {"name": "Three Kings' Day", "local_name": 'Día de Reyes', "countries": ['Mexico'], "category": 'unofficial', "date_type": 'fixed', "month": 1, "day": 6, "source": 'https://informador.mx'},
+    {"name": 'Epiphany', "local_name": 'Día de Reyes / Épiphanie', "countries": ['France', 'Mexico'], "category": 'unofficial', "date_type": 'fixed', "month": 1, "day": 6, "source": 'https://informador.mx', "note": 'Lễ Hiển Linh (Epiphany) — Mexico gọi "Three Kings\' Day"/"Día de Reyes", Pháp gọi "Épiphanie"'},
     {"name": 'Constitution Day', "local_name": 'Día de la Constitución', "countries": ['Mexico'], "category": 'official', "date_type": 'nth_weekday', "month": 2, "weekday": 0, "nth": 1, "source": 'https://eluniversal.com.mx/consultas/blog/rrhh/calendario-completo-de-dias-festivos-oficiales-2026-en-mexico'},
     {"name": "Benito Juárez's Birthday", "countries": ['Mexico'], "category": 'official', "date_type": 'nth_weekday', "month": 3, "weekday": 0, "nth": 3, "source": 'https://eluniversal.com.mx/consultas/blog/rrhh/calendario-completo-de-dias-festivos-oficiales-2026-en-mexico'},
     {"name": 'Cinco de Mayo', "countries": ['Mexico', 'US'], "category": 'unofficial', "date_type": 'fixed', "month": 5, "day": 5, "source": 'https://mediotiempo.com', "note": 'Không phải ngày nghỉ lễ lao động chính thức, chỉ lớn ở Puebla + hải ngoại (đặc biệt tại Mỹ)'},
@@ -185,9 +166,7 @@ EVENTS = [
     {"name": 'Chinese New Year', "local_name": 'Imlek', "countries": ['Indonesia'], "category": 'official', "date_type": 'explicit', "date": '2026-02-17', "source": 'https://hari.co.id/en/public-holidays/2026'},
     {"name": 'Ramadan Begins', "countries": ['Indonesia'], "category": 'unofficial', "date_type": 'explicit', "date": '2026-02-19', "source": 'https://s3pendsains.fmipa.unesa.ac.id/post/pemerintah-tetapkan-1-ramadan-2026-1447-h-melalui-hasil-sidang-isbat', "note": 'Không phải ngày nghỉ, nhưng mở đầu mùa chi tiêu lớn nhất năm (~80% người Indonesia), đỉnh điểm 10 ngày cuối trước Lebaran'},
     {"name": 'Nyepi (Balinese New Year)', "countries": ['Indonesia'], "category": 'official', "date_type": 'explicit', "date": '2026-03-19', "source": 'https://detik.com/sulsel/berita/d-8487935'},
-    {"name": 'Eid al-Fitr (Lebaran)', "countries": ['Indonesia'], "category": 'official', "date_type": 'explicit', "date": '2026-03-21', "source": 'https://setneg.go.id/baca/index/pemerintah_tetapkan_1_syawal_1447_h_jatuh_pada_21_maret_2026', "note": 'Kèm nghỉ bù nhiều ngày, tạo cả tuần nghỉ/về quê (mudik) — dịp quan trọng nhất năm ở Indonesia'},
     {"name": 'Pancasila Day', "countries": ['Indonesia'], "category": 'official', "date_type": 'fixed', "month": 6, "day": 1, "source": 'https://hari.co.id/en/public-holidays/2026'},
-    {"name": 'Eid al-Adha', "countries": ['Indonesia'], "category": 'official', "date_type": 'explicit', "date": '2026-05-27', "source": 'https://hari.co.id/en/public-holidays/2026'},
     {"name": 'Islamic New Year', "countries": ['Indonesia'], "category": 'official', "date_type": 'explicit', "date": '2026-06-16', "source": 'https://hari.co.id/en/public-holidays/2026'},
     {"name": 'Independence Day', "local_name": 'Hari Kemerdekaan', "countries": ['Indonesia'], "category": 'official', "date_type": 'fixed', "month": 8, "day": 17, "source": 'https://hari.co.id/en/public-holidays/2026'},
     {"name": 'Maulid Nabi Muhammad', "countries": ['Indonesia'], "category": 'official', "date_type": 'explicit', "date": '2026-08-25', "source": 'https://hari.co.id/en/public-holidays/2026'},
@@ -196,20 +175,15 @@ EVENTS = [
     {"name": "Eid'l Fitr", "countries": ['Philippines'], "category": 'official', "date_type": 'explicit', "date": '2026-03-20', "source": 'https://pia.gov.ph/news/proclamation-no-1189-s-2026-declaring-friday-20-march-2026-a-regular-holiday-throughout-the-country-in-observance-of-eidl-fitr-feast-of-ramadhan'},
     {"name": 'Maundy Thursday', "countries": ['Philippines'], "category": 'official', "date_type": 'easter_offset', "offset_days": -3, "source": 'https://publicholidays.ph/easter'},
     {"name": 'Day of Valor', "local_name": 'Araw ng Kagitingan', "countries": ['Philippines'], "category": 'official', "date_type": 'fixed', "month": 4, "day": 9, "source": 'https://newsinfo.inquirer.net/2104754'},
-    {"name": 'Labor Day', "countries": ['Philippines'], "category": 'official', "date_type": 'fixed', "month": 5, "day": 1, "source": 'https://newsinfo.inquirer.net/2104754'},
-    {"name": "Eid'l Adha", "countries": ['Philippines'], "category": 'official', "date_type": 'explicit', "date": '2026-05-27', "source": 'https://lawphil.net/executive/proc/proc2026/proc_1264_2026.html'},
     {"name": 'Independence Day', "countries": ['Philippines'], "category": 'official', "date_type": 'fixed', "month": 6, "day": 12, "source": 'https://newsinfo.inquirer.net/2104754'},
     {"name": '"-Ber Months" Christmas Season Start', "countries": ['Philippines'], "category": 'unofficial', "date_type": 'fixed', "month": 9, "day": 1, "source": 'https://dhl.com/discover/en-ph/e-commerce-advice/e-commerce-best-practice/tips-to-prepare-for-the-ber-months', "note": 'Mùa Giáng sinh dài nhất thế giới (Sept-Dec), nên bắt đầu chiến dịch từ đây'},
     {"name": 'Ninoy Aquino Day', "countries": ['Philippines'], "category": 'official', "date_type": 'fixed', "month": 8, "day": 21, "source": 'https://newsinfo.inquirer.net/2104754'},
     {"name": 'National Heroes Day', "countries": ['Philippines'], "category": 'official', "date_type": 'nth_weekday', "month": 8, "weekday": 0, "nth": -1, "source": 'https://newsinfo.inquirer.net/2104754'},
-    {"name": "All Saints' Day / Undas", "countries": ['Philippines'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 1, "source": 'https://newsinfo.inquirer.net/2104754', "note": 'Dịp về quê/thăm mộ lớn nhất năm ở Philippines'},
     {"name": 'Bonifacio Day', "countries": ['Philippines'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 30, "source": 'https://newsinfo.inquirer.net/2104754'},
     {"name": 'Christmas Eve', "countries": ['Philippines'], "category": 'official', "date_type": 'fixed', "month": 12, "day": 24, "source": 'https://newsinfo.inquirer.net/2104754'},
     {"name": 'Rizal Day', "countries": ['Philippines'], "category": 'official', "date_type": 'fixed', "month": 12, "day": 30, "source": 'https://newsinfo.inquirer.net/2104754'},
-
-    # ---------------- BO SUNG NGHIEN CUU 2026-08-27 ----------------
     {"name": "St. Patrick's Day", "countries": ['US', 'Canada'], "category": 'unofficial', "date_type": 'fixed', "month": 3, "day": 17, "source": "https://en.wikipedia.org/wiki/Saint_Patrick's_Day_in_the_United_States"},
-    {"name": 'Veterans Day', "countries": ['US'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 11, "source": 'https://en.wikipedia.org/wiki/Veterans_Day'},
+    {"name": 'Armistice Day', "countries": ['US', 'Canada', 'France'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 11, "source": 'https://en.wikipedia.org/wiki/Veterans_Day', "note": 'Gọi là "Veterans Day" ở Mỹ, "Remembrance Day" ở Canada — cùng kỷ niệm ngày đình chiến Thế chiến I (11/11/1918)'},
     {"name": "St Patrick's Day (Northern Ireland)", "countries": ['UK'], "category": 'official', "date_type": 'fixed', "month": 3, "day": 17, "source": 'https://x.com/GOVUK/status/2007088068654755942', "note": 'Chỉ là bank holiday ở Bắc Ireland — Anh/Scotland/Wales vẫn là ngày làm việc bình thường'},
     {"name": "St Andrew's Day", "countries": ['UK'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 30, "source": 'https://www.legislation.gov.uk/asp/2007/2/section/1/notes', "note": 'Chỉ là bank holiday ở Scotland (quốc lễ Scotland)'},
     {"name": 'Bonfire Night', "local_name": 'Guy Fawkes Night', "countries": ['UK'], "category": 'unofficial', "date_type": 'fixed', "month": 11, "day": 5, "source": 'https://en.wikipedia.org/wiki/Guy_Fawkes_Night', "note": 'Không phải ngày nghỉ lễ nhưng truyền thống 400 năm khắp UK (pháo hoa, đốt lửa trại)'},
@@ -226,16 +200,8 @@ EVENTS = [
     {"name": 'Nikolaustag', "local_name": 'Nikolaustag', "countries": ['Germany'], "category": 'unofficial', "date_type": 'fixed', "month": 12, "day": 6, "source": 'https://www.hamburg.com/visitors/holidays/st-nicholas-day-23008', "note": 'Không phải ngày nghỉ lễ nhưng gần như ai cũng mừng — trẻ em để giày ra đêm 5/12 nhận quà nhỏ'},
     {"name": 'Repentance Day', "local_name": 'Buß- und Bettag', "countries": ['Germany'], "category": 'official', "date_type": 'explicit', "date": '2026-11-18', "source": 'https://publicholidays.de/de/repentance-day/', "note": 'Ngày nghỉ có lương chỉ còn ở bang Sachsen — luôn là thứ 4, 11 ngày trước Chủ nhật Vọng đầu tiên, cần tính lại mỗi năm'},
     {"name": 'Weiberfastnacht', "countries": ['Germany'], "category": 'unofficial', "date_type": 'easter_offset', "offset_days": -52, "source": 'https://germangirlinamerica.com/what-is-weiberfastnacht/', "note": 'Chủ yếu vùng Rhineland (Köln, Düsseldorf, Bonn) — mở đầu tuần Karneval sôi động nhất'},
-    {"name": 'Épiphanie', "countries": ['France'], "category": 'unofficial', "date_type": 'fixed', "month": 1, "day": 6, "source": 'https://fr.wikipedia.org/wiki/Galette_des_rois', "note": 'Không phải ngày nghỉ lễ nhưng dịp bán bánh galette des rois lớn kéo dài nhiều tuần'},
     {"name": 'Chandeleur', "countries": ['France'], "category": 'unofficial', "date_type": 'fixed', "month": 2, "day": 2, "source": 'https://www.date-pratique.fr/chandeleur.html', "note": 'Truyền thống ăn crêpe gần như toàn quốc, không phải ngày nghỉ lễ'},
     {"name": 'Fête de la Musique', "countries": ['France'], "category": 'official', "date_type": 'fixed', "month": 6, "day": 21, "source": 'https://www.culture.gouv.fr/evenements-nationaux/fete-de-la-musique', "note": 'Sự kiện âm nhạc miễn phí toàn quốc do Bộ Văn hoá Pháp tổ chức từ 1982, không phải ngày nghỉ lễ'},
-    {"name": 'Vernal Equinox Day', "local_name": '春分の日', "countries": ['Japan'], "category": 'official', "date_type": 'explicit', "date": '2026-03-20', "source": 'https://en.wikipedia.org/wiki/Vernal_Equinox_Day', "note": 'Ngày do thiên văn quyết định, chính phủ Nhật chỉ công bố chính thức vào tháng 2 năm trước — cần xác minh lại mỗi năm'},
-    {"name": 'Autumnal Equinox Day', "local_name": '秋分の日', "countries": ['Japan'], "category": 'official', "date_type": 'explicit', "date": '2026-09-23', "source": 'https://en.wikipedia.org/wiki/Autumnal_Equinox_Day', "note": "Tương tự Vernal Equinox Day — năm 2026 tạo cụm nghỉ liền 3 ngày với Respect for the Aged Day ('Silver Week')"},
-    {"name": 'Culture Day', "local_name": '文化の日', "countries": ['Japan'], "category": 'official', "date_type": 'fixed', "month": 11, "day": 3, "source": 'https://en.wikipedia.org/wiki/Culture_Day'},
-    {"name": 'Sports Day', "local_name": 'スポーツの日', "countries": ['Japan'], "category": 'official', "date_type": 'nth_weekday', "month": 10, "weekday": 0, "nth": 2, "source": 'https://en.wikipedia.org/wiki/Sports_Day_(Japan)', "note": "Đổi tên từ 'Health and Sports Day' năm 2020"},
-    {"name": 'Constitution Day', "local_name": '제헌절', "countries": ['South Korea'], "category": 'official', "date_type": 'fixed', "month": 7, "day": 17, "source": 'https://www.koreaherald.com/article/10665867', "note": 'Từ 2008 chỉ là ngày kỷ niệm (vẫn đi làm), chính thức trở lại thành ngày nghỉ có lương từ 2026'},
-    {"name": "Parents' Day", "local_name": '어버이날', "countries": ['South Korea'], "category": 'unofficial', "date_type": 'fixed', "month": 5, "day": 8, "source": 'https://en.wikipedia.org/wiki/Parents%27_Day', "note": 'Không phải ngày nghỉ nhưng dịp tặng quà/hoa cẩm chướng lớn cho cha mẹ, tầm quan trọng tương tự Pepero Day'},
-    {"name": "Teachers' Day", "local_name": '스승의 날', "countries": ['South Korea'], "category": 'unofficial', "date_type": 'fixed', "month": 5, "day": 15, "source": 'https://www.korea.net/NewsFocus/Society/view?articleId=136259', "note": 'Ngày kỷ niệm do chính phủ chọn (không nghỉ), trùng sinh nhật vua Sejong'},
     {"name": 'Navratri', "local_name": 'शारदीय नवरात्रि', "countries": ['India'], "category": 'unofficial', "date_type": 'explicit', "date": '2026-10-11', "source": 'https://www.calendardate.com/navratri_2026.htm', "note": 'Lễ hội 9 đêm trước Dussehra — lớn nhất ở Gujarat/Tây Ấn Độ (garba/dandiya), cần xác minh lại ngày mỗi năm'},
     {"name": 'Durga Puja', "local_name": 'দুর্গা পূজা', "countries": ['India'], "category": 'official', "date_type": 'explicit', "date": '2026-10-16', "source": 'https://samvat.in/festivals/durga-puja-2026/', "note": 'Ngày nghỉ chính thức ở Tây Bengal/Odisha/Tripura/Bihar/Assam — ngày kết thúc trùng Dussehra, cần xác minh lại mỗi năm'},
     {"name": 'Onam', "local_name": 'ഓണം', "countries": ['India'], "category": 'official', "date_type": 'explicit', "date": '2026-08-26', "source": 'https://www.drikpanchang.com/festivals/onam/onam-thiruvonam-date.html?geoname-id=1254163', "note": 'Ngày nghỉ chính thức bang Kerala, lễ hội thu hoạch lớn nhất Nam Ấn Độ — cần xác minh lại mỗi năm'},
@@ -342,19 +308,26 @@ def event_tiers(event):
     return {COUNTRIES[c][1] for c in event["countries"] if c in COUNTRIES}
 
 
-def upcoming_events(today=None, countries=None, tiers=None, categories=None, limit=None, until=None):
+def upcoming_events(today=None, countries=None, tiers=None, categories=None, limit=None, until=None, since=None):
     """Danh sách sự kiện sắp tới, sắp xếp theo ngày gần nhất — lọc được
     theo quốc gia/tier/loại. 1 sự kiện có thể thuộc NHIỀU quốc gia
     ("countries" là 1 danh sách) — khớp bộ lọc quốc gia/tier nếu CÓ ÍT NHẤT
     1 nước trong danh sách của sự kiện khớp. `today` mặc định là hôm nay
-    thật (truyền vào khi cần test với 1 ngày cố định). `until`: chỉ lấy sự
-    kiện TỚI ngày này (bao gồm) — mặc định = hết năm hiện tại (31/12), vì
-    dữ liệu chỉ có ý nghĩa chắc chắn trong năm đang chạy (xem docstring
+    thật (truyền vào khi cần test với 1 ngày cố định).
+
+    `since`/`until`: chỉ lấy sự kiện rơi trong khoảng [since, until] (bao
+    gồm cả 2 đầu) — mặc định `since=today`, `until`=hết năm hiện tại
+    (31/12). Cho 1 khung thời gian TRONG TƯƠNG LAI không dính hôm nay (vd
+    "chỉ xem tháng 9", không phải "từ nay tới hết tháng 9") — truyền
+    `since` là ngày đầu khung đó (xem `_event_range_bounds` trong app.py).
+    Dữ liệu chỉ có ý nghĩa chắc chắn trong năm đang chạy (xem docstring
     EVENTS/needs_update — nhiều mục âm lịch/tôn giáo phải cập nhật lại MỖI
-    NĂM, đoán xa hơn 1 năm dễ sai). Ưu tiên chắc chắn trong phạm vi gần hơn
-    là dàn trải xa mà thiếu chính xác."""
+    NĂM, đoán xa hơn 1 năm dễ sai) — ưu tiên chắc chắn trong phạm vi gần
+    hơn là dàn trải xa mà thiếu chính xác."""
     if today is None:
         today = date.today()
+    if since is None:
+        since = today
     if until is None:
         until = date(today.year, 12, 31)
     rows = []
@@ -366,7 +339,7 @@ def upcoming_events(today=None, countries=None, tiers=None, categories=None, lim
         if categories and ev["category"] not in categories:
             continue
         d = next_occurrence(ev, today)
-        if d is None or d > until:
+        if d is None or d < since or d > until:
             continue
         rows.append((d, ev))
     rows.sort(key=lambda r: r[0])

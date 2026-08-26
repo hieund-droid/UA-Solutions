@@ -1484,60 +1484,72 @@ def render_personal_library():
 
 
 _EVENT_CATEGORY_ACCENT = {"official": "#111111", "unofficial": "#9aa0a6"}
+# Tên quốc gia tiếng Việt — dùng để hiện TEXT rõ ràng thay cho cờ emoji.
+# Bỏ hẳn cờ quốc gia (COUNTRY_FLAGS trong events_data.py) khỏi giao diện:
+# emoji cờ (2 ký tự "regional indicator" ghép lại) cần font màu đầy đủ mới
+# render đúng — trên nhiều máy Windows thực tế lại hiện ra chữ 2 ký tự thô
+# (VD "IN", "GB") rất khó nhìn, không phải lỗi hiếm — phản hồi thật từ
+# người dùng thật, không phải chỉ môi trường test.
+_COUNTRY_VN_NAMES = {
+    "US": "Mỹ", "UK": "Anh", "Canada": "Canada", "Australia": "Úc", "Germany": "Đức",
+    "France": "Pháp", "India": "Ấn Độ",
+    "Brazil": "Brazil", "Mexico": "Mexico", "Indonesia": "Indonesia", "Philippines": "Philippines",
+}
 _VN_MONTH_NAMES = {
     1: "Tháng 1", 2: "Tháng 2", 3: "Tháng 3", 4: "Tháng 4", 5: "Tháng 5", 6: "Tháng 6",
     7: "Tháng 7", 8: "Tháng 8", 9: "Tháng 9", 10: "Tháng 10", 11: "Tháng 11", 12: "Tháng 12",
 }
 # Số nước từ đó trở lên thì hiện gọn "🌍 Global (N quốc gia)" thay vì liệt
-# kê từng cờ — CHỈ áp dụng khi sự kiện thực sự phủ phần lớn danh sách quốc
-# gia đang theo dõi (13 nước), tránh nói quá ("global" mà thiếu >1/3 số
-# nước thì gây hiểu lầm) — ngưỡng chọn dựa trên dữ liệu thật sau khi gộp
-# (New Year's Day/Christmas Day ở mức 11-12/13, đây là mức cao nhất hiện
-# có) — 8 là mốc "đa số rõ ràng" hợp lý cho các nhóm nhỏ hơn.
-_GLOBAL_LABEL_THRESHOLD = 8
+# kê từng tên nước — CHỈ áp dụng khi sự kiện thực sự phủ phần lớn danh sách
+# quốc gia đang theo dõi, tránh nói quá ("global" mà thiếu quá nhiều nước
+# thì gây hiểu lầm). Tính THEO TỈ LỆ (70% số nước đang theo dõi) thay vì số
+# tuyệt đối — để không cần sửa tay mỗi khi danh sách quốc gia thay đổi (đã
+# đổi 1 lần thật, khi bỏ Japan/South Korea 2026-08-27, 13→11 nước).
+_GLOBAL_LABEL_THRESHOLD = max(1, round(len(events_data.COUNTRIES) * 0.7))
 # Khoảng thời gian xem trước — nhãn tiếng Anh chuyên nghiệp theo yêu cầu
-# thực tế (khác phần còn lại của trang, vốn dùng tiếng Việt) — mỗi option
-# tính "until" (ngày cuối cùng lấy sự kiện) khác nhau qua _event_range_until()
-# bên dưới, luôn tính từ HÔM NAY (không nhảy cóc bỏ qua phần còn lại của
-# tháng hiện tại).
+# thực tế (khác phần còn lại của trang, vốn dùng tiếng Việt).
+#
+# QUAN TRỌNG (sửa lại theo phản hồi thật — hiểu sai lúc đầu): mỗi option là
+# 1 KHUNG THỜI GIAN RIÊNG BIỆT, không phải "từ hôm nay đến X" cho tất cả.
+# "Next Month" nghĩa là CHỈ xem sự kiện trong tháng SAU (không hiện phần còn
+# lại của tháng này), "Next 3 Months"/"Next Year" cũng theo đúng tinh thần
+# đó — chỉ "This Month" và "Until End of Year" là tính từ HÔM NAY (vì bản
+# thân tên gọi đã ngụ ý "từ giờ đến lúc đó", không phải 1 khung tương lai
+# tách biệt). _event_range_bounds() trả về cặp (since, until) — cả 2 đầu.
 _EVENT_RANGE_OPTIONS = ["This Month", "Next Month", "Next 3 Months", "Until End of Year", "Next Year"]
 
 
-def _event_range_until(range_key, today):
-    """Tính ngày "until" (bao gồm) cho từng lựa chọn khoảng thời gian —
-    LUÔN tính khoảng từ hôm nay (không bỏ qua phần còn lại của tháng hiện
-    tại), chỉ khác nhau ở điểm KẾT THÚC."""
+def _add_months(year, month, n):
+    """Cộng `n` tháng vào (year, month) — trả về (year, month) đã chuẩn hoá
+    (month luôn 1-12, tự cộng/trừ năm khi tràn)."""
+    total = year * 12 + (month - 1) + n
+    return total // 12, total % 12 + 1
+
+
+def _month_end(year, month):
+    """Ngày cuối cùng của (year, month)."""
+    y2, m2 = _add_months(year, month, 1)
+    return date(y2, m2, 1) - timedelta(days=1)
+
+
+def _event_range_bounds(range_key, today):
+    """Trả về (since, until) — cả 2 đầu khung thời gian, bao gồm cả 2 mốc.
+    Xem ghi chú ở _EVENT_RANGE_OPTIONS: chỉ "This Month"/"Until End of
+    Year" tính từ hôm nay, các option "Next ..." là khung RIÊNG BIỆT trong
+    tương lai, không dính phần còn lại của kỳ hiện tại."""
     if range_key == "This Month":
-        # ngay cuoi cung cua thang hien tai
-        if today.month == 12:
-            return date(today.year, 12, 31)
-        return date(today.year, today.month + 1, 1) - timedelta(days=1)
+        return today, _month_end(today.year, today.month)
     if range_key == "Next Month":
-        # het thang ke tiep
-        y, m = today.year, today.month + 1
-        m2 = m + 1
-        y2 = y
-        if m2 > 12:
-            m2 -= 12
-            y2 += 1
-        if m > 12:
-            m -= 12
-            y += 1
-        return date(y2, m2, 1) - timedelta(days=1)
+        y1, m1 = _add_months(today.year, today.month, 1)
+        return date(y1, m1, 1), _month_end(y1, m1)
     if range_key == "Next 3 Months":
-        y, m = today.year, today.month + 3
-        y += (m - 1) // 12
-        m = (m - 1) % 12 + 1
-        m2 = m + 1
-        y2 = y
-        if m2 > 12:
-            m2 -= 12
-            y2 += 1
-        return date(y2, m2, 1) - timedelta(days=1)
+        y1, m1 = _add_months(today.year, today.month, 1)
+        y2, m2 = _add_months(today.year, today.month, 3)
+        return date(y1, m1, 1), _month_end(y2, m2)
     if range_key == "Next Year":
-        return date(today.year + 1, 12, 31)
+        return date(today.year + 1, 1, 1), date(today.year + 1, 12, 31)
     # "Until End of Year" (mac dinh)
-    return date(today.year, 12, 31)
+    return today, date(today.year, 12, 31)
 
 
 def render_events():
@@ -1566,9 +1578,13 @@ def render_events():
             index=_EVENT_RANGE_OPTIONS.index("Until End of Year"),
             key="events_range_filter",
         )
-    until = _event_range_until(range_choice, date.today())
+    since, until = _event_range_bounds(range_choice, date.today())
+    if since == date.today():
+        caption_range = f"TỪ NAY ĐẾN {until.strftime('%d/%m/%Y')}"
+    else:
+        caption_range = f"TỪ {since.strftime('%d/%m/%Y')} ĐẾN {until.strftime('%d/%m/%Y')}"
     st.caption(
-        f"Ngày lễ/sự kiện sắp tới TỪ NAY ĐẾN {until.strftime('%d/%m/%Y')} theo từng quốc gia — mỗi mục "
+        f"Ngày lễ/sự kiện {caption_range} theo từng quốc gia — mỗi mục "
         "đều có nguồn kiểm chứng kèm theo."
     )
 
@@ -1583,6 +1599,7 @@ def render_events():
         }
         .event-card:hover { box-shadow: 0 3px 14px rgba(17,17,17,0.07); border-color: #e0e0e1; }
         .event-card-title { font-weight: 700; font-size: 1.0rem; color: #111111; line-height: 1.35; }
+        .event-card-countries { font-weight: 400; font-size: 0.8rem; color: #9aa0a6; }
         .event-card-sub { color: #86898f; font-size: 0.78rem; margin-top: 3px; }
         .event-badge {
             display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 2px 9px;
@@ -1622,13 +1639,13 @@ def render_events():
         tier_choice = st.multiselect(
             "Tier", [1, 2], default=[1, 2], format_func=lambda t: f"Tier {t}",
             key="events_tier_filter",
-            help="Tier 1: các nước UA hay chạy (US, UK, Canada, Úc, Đức, Pháp, Nhật, Hàn). "
+            help="Tier 1: các nước UA hay chạy (US, UK, Canada, Úc, Đức, Pháp). "
                  "Tier 2: India, Brazil, Mexico, Indonesia, Philippines.",
         )
     with filt2:
         country_choice = st.multiselect(
             "Quốc gia (để trống = tất cả)", list(events_data.COUNTRIES.keys()),
-            format_func=lambda c: f"{events_data.COUNTRY_FLAGS.get(c, '')} {c}".strip(),
+            format_func=lambda c: _COUNTRY_VN_NAMES.get(c, c),
             key="events_country_filter",
         )
     with filt3:
@@ -1645,6 +1662,7 @@ def render_events():
         countries=country_choice or None,
         tiers=tier_choice or None,
         categories=category_choice or None,
+        since=since,
         until=until,
     )
 
@@ -1674,12 +1692,18 @@ def render_events():
         countries = ev["countries"]
         if len(countries) >= _GLOBAL_LABEL_THRESHOLD:
             # Phủ phần lớn danh sách quốc gia đang theo dõi — gọn thành 1
-            # dòng thay vì liệt kê 8-12 lá cờ (rối mắt), nhưng vẫn ghi rõ
-            # SỐ nước thay vì nói "Global" trơn — tránh nói quá khi thực tế
-            # có thể vẫn thiếu 1-2 nước (vd New Year's Day thiếu Ấn Độ).
-            country_label = f"🌍 Global ({len(countries)} quốc gia)"
+            # dòng ghi rõ SỐ nước thay vì nói "Global" trơn — tránh nói quá
+            # khi thực tế có thể vẫn thiếu vài nước (vd New Year's Day
+            # thiếu Ấn Độ).
+            country_text = f"🌍 Global — {len(countries)} quốc gia"
         else:
-            country_label = " ".join(events_data.COUNTRY_FLAGS.get(c, c) for c in countries)
+            # TEXT rõ ràng (tên nước tiếng Việt), KHÔNG dùng cờ emoji nữa —
+            # cờ (2 ký tự regional-indicator ghép lại) trên nhiều máy
+            # Windows thực tế hiện ra chữ thô "IN", "GB"... rất khó nhìn,
+            # phản hồi thật từ người dùng, không phải lỗi hiếm/chỉ môi
+            # trường test. Đặt trong ngoặc, chữ nhạt hơn, đứng SAU tên sự
+            # kiện — không còn đứng trước làm rối tiêu đề như trước.
+            country_text = ", ".join(_COUNTRY_VN_NAMES.get(c, c) for c in countries)
         accent = _EVENT_CATEGORY_ACCENT.get(ev["category"], "#9aa0a6")
         title = ev["name"] + (f" ({ev['local_name']})" if ev.get("local_name") else "")
         badge_style = (
@@ -1695,7 +1719,8 @@ def render_events():
             f'<div class="event-card" style="--accent:{accent}">'
             f'<div>'
             f'<span class="event-badge" style="{badge_style}">{events_data.CATEGORY_LABELS[ev["category"]]}</span>'
-            f'<span class="event-card-title">{country_label} {title}</span>'
+            f'<span class="event-card-title">{title}</span> '
+            f'<span class="event-card-countries">({country_text})</span>'
             f'<div class="event-card-sub">{" · ".join(sub_bits)} · '
             f'<a class="event-source" href="{ev["source"]}" target="_blank">🔗 Nguồn</a></div>'
             f'</div>'
@@ -1977,5 +2002,11 @@ with st.sidebar:
             on_click=_do_logout,
         )
 
-active_item = _find_nav_item(st.session_state.nav_page) or NAV_ITEMS[0]["children"][2]
+# Fallback nếu nav_page lưu trong session bị hỏng/không khớp mục nào (vd
+# session cũ từ trước khi đổi key) — KHÔNG dùng NAV_ITEMS[0] nữa (giờ là
+# "personal_library", không có "children") vì sẽ crash KeyError, tìm đúng
+# mục "outro" theo key như default nav_page ở trên.
+active_item = _find_nav_item(st.session_state.nav_page)
+if active_item is None:
+    active_item = next(item for item in NAV_ITEMS if item["key"] == "outro")["children"][2]
 active_item["fn"]()
