@@ -715,17 +715,33 @@ def render_video_remixer():
         render_results_grid(st.session_state.outputs, "dl")
 
 
-def render_outro_swap():
-    """Tab 'Cắt & Gắn Outro' — tính năng khác biệt hoàn toàn với Video
-    Remixer: cắt outro của ĐỐI THỦ ở cuối mỗi video, gắn outro của MÌNH vào
-    thay thế, GIỮ NGUYÊN nội dung gốc — không xáo trộn/ghép video với nhau.
-    Mỗi video đầu vào cho ra đúng 1 video kết quả tương ứng."""
-    st.title(":material/content_cut: Outro Solution")
-    st.caption(
-        "Cắt outro đối thủ ở cuối video, gắn outro của bạn vào thay thế. "
-        "Tải lên ≥2 video CÙNG 1 đối thủ/app cùng lúc để cắt chính xác nhất — "
-        "chỉ có 1 video vẫn thử cắt được nếu dò ra điểm chuyển cảnh/badge cửa hàng ứng dụng."
-    )
+def render_outro_swap(mode="full"):
+    """Trang 'Outro Solution' — chia 3 chế độ (xem NAV_ITEMS, mục "outro" có
+    children) để mỗi người chỉ cần dùng đúng phần mình cần, đỡ rối mắt VÀ đỡ
+    tốn tài nguyên máy chủ (chế độ "trademark" bỏ qua HẲN bước dò/cắt outro
+    — phần nặng/tốn thời gian nhất — nếu người dùng không cần cắt gì cả):
+      - mode="cut": CHỈ cắt outro đối thủ, không gắn outro của mình, không
+        trademark.
+      - mode="trademark": CHỈ gắn trademark bay, KHÔNG đụng gì tới outro (bỏ
+        qua toàn bộ outro_core, video giữ nguyên trừ phần trademark dán lên).
+      - mode="full": như bản gốc trước đây — cắt outro đối thủ + gắn outro
+        của mình (tuỳ chọn) + trademark (tuỳ chọn)."""
+    titles = {
+        "cut": (":material/content_cut: Cắt outro đối thủ",
+                "Chỉ cắt outro đối thủ ở cuối video, KHÔNG gắn gì thêm vào cuối. "
+                "Tải lên ≥2 video CÙNG 1 đối thủ/app cùng lúc để cắt chính xác nhất — "
+                "chỉ có 1 video vẫn thử cắt được nếu dò ra điểm chuyển cảnh/badge cửa hàng ứng dụng."),
+        "trademark": (":material/flare: Trademark bay",
+                      "Dán trademark (chữ/logo) bay khắp khung hình lên video — "
+                      "KHÔNG đụng gì tới outro, video giữ nguyên nội dung + outro gốc."),
+        "full": (":material/auto_awesome: Outro Solution — Đầy đủ",
+                 "Cắt outro đối thủ ở cuối video, gắn outro của bạn vào thay thế, có thể thêm trademark. "
+                 "Tải lên ≥2 video CÙNG 1 đối thủ/app cùng lúc để cắt chính xác nhất — "
+                 "chỉ có 1 video vẫn thử cắt được nếu dò ra điểm chuyển cảnh/badge cửa hàng ứng dụng."),
+    }
+    title_text, caption_text = titles[mode]
+    st.title(title_text)
+    st.caption(caption_text)
 
     for key, default in [("outro_outputs", []), ("outro_run_error", None), ("outro_uploader_version", 0)]:
         if key not in st.session_state:
@@ -733,79 +749,87 @@ def render_outro_swap():
 
     user_id = st.session_state.get("user_id", "unknown")
 
-    with st.expander("⚙️ Outro của tôi"):
-        for category in OUTRO_CATEGORY_SLUGS:
-            st.markdown(f"**{category}**")
+    # Thư viện "Outro của tôi" (chọn outro để GẮN VÀO cuối) chỉ có ý nghĩa ở
+    # chế độ "full" — chế độ "cut" không gắn gì thêm, chế độ "trademark"
+    # không đụng gì tới outro cả.
+    if mode == "full":
+        with st.expander("⚙️ Outro của tôi"):
+            for category in OUTRO_CATEGORY_SLUGS:
+                st.markdown(f"**{category}**")
 
-            shared_existing = _list_outros(category, "shared")
-            if shared_existing:
-                st.caption("Dùng chung (cả team, chỉ xem — không sửa/xoá được ở đây)")
-                cols = st.columns(4)
-                for idx, f in enumerate(shared_existing):
-                    with cols[idx % 4]:
-                        st.video(str(f))
-                        dur = _outro_duration(str(f), f.stat().st_mtime)
-                        st.caption(f"{f.stem} · {dur:.1f}s")
+                shared_existing = _list_outros(category, "shared")
+                if shared_existing:
+                    st.caption("Dùng chung (cả team, chỉ xem — không sửa/xoá được ở đây)")
+                    cols = st.columns(4)
+                    for idx, f in enumerate(shared_existing):
+                        with cols[idx % 4]:
+                            st.video(str(f))
+                            dur = _outro_duration(str(f), f.stat().st_mtime)
+                            st.caption(f"{f.stem} · {dur:.1f}s")
 
-            st.caption("Của tôi (chỉ mình bạn thấy)")
-            mine_dir = _outro_dir_for(category, "mine", user_id)
-            mine_existing = _list_outros(category, "mine", user_id)
+                st.caption("Của tôi (chỉ mình bạn thấy)")
+                mine_dir = _outro_dir_for(category, "mine", user_id)
+                mine_existing = _list_outros(category, "mine", user_id)
 
-            if mine_existing:
-                cols = st.columns(4)
-                for idx, f in enumerate(mine_existing):
-                    with cols[idx % 4]:
-                        # Mục quản lý xem lại được toàn bộ video (đúng chất
-                        # lượng gốc), KHÁC với ảnh nhỏ ở mục tích chọn bên
-                        # dưới (cố tình thu nhỏ để thao tác nhanh, không lag).
-                        st.video(str(f))
-                        dur = _outro_duration(str(f), f.stat().st_mtime)
-                        st.caption(f"{dur:.1f}s")
-                        new_name = st.text_input(
-                            "Tên", value=f.stem, key=f"rename_outro_{category}_{f.name}",
-                            label_visibility="collapsed",
-                        )
-                        rcol, dcol = st.columns(2)
-                        if rcol.button("✏️ Đổi tên", key=f"rename_btn_{category}_{f.name}", use_container_width=True):
-                            clean_name = _sanitize_name_prefix(new_name)
-                            if not clean_name:
-                                st.error("Tên không được để trống.")
-                            elif clean_name == f.stem:
-                                st.info("Tên không đổi.")
-                            else:
-                                new_path = f.parent / f"{clean_name}{f.suffix}"
-                                if new_path.exists():
-                                    st.error(f"Đã có outro tên '{clean_name}' rồi, chọn tên khác.")
+                if mine_existing:
+                    cols = st.columns(4)
+                    for idx, f in enumerate(mine_existing):
+                        with cols[idx % 4]:
+                            # Mục quản lý xem lại được toàn bộ video (đúng chất
+                            # lượng gốc), KHÁC với ảnh nhỏ ở mục tích chọn bên
+                            # dưới (cố tình thu nhỏ để thao tác nhanh, không lag).
+                            st.video(str(f))
+                            dur = _outro_duration(str(f), f.stat().st_mtime)
+                            st.caption(f"{dur:.1f}s")
+                            new_name = st.text_input(
+                                "Tên", value=f.stem, key=f"rename_outro_{category}_{f.name}",
+                                label_visibility="collapsed",
+                            )
+                            rcol, dcol = st.columns(2)
+                            if rcol.button("✏️ Đổi tên", key=f"rename_btn_{category}_{f.name}", use_container_width=True):
+                                clean_name = _sanitize_name_prefix(new_name)
+                                if not clean_name:
+                                    st.error("Tên không được để trống.")
+                                elif clean_name == f.stem:
+                                    st.info("Tên không đổi.")
                                 else:
-                                    f.rename(new_path)
-                                    st.rerun()
-                        if dcol.button("🗑️ Xoá", key=f"del_outro_{category}_{f.name}", use_container_width=True):
-                            f.unlink(missing_ok=True)
-                            st.rerun()
-            else:
-                st.caption("Chưa có outro riêng nào — thêm ở ô bên dưới.")
+                                    new_path = f.parent / f"{clean_name}{f.suffix}"
+                                    if new_path.exists():
+                                        st.error(f"Đã có outro tên '{clean_name}' rồi, chọn tên khác.")
+                                    else:
+                                        f.rename(new_path)
+                                        st.rerun()
+                            if dcol.button("🗑️ Xoá", key=f"del_outro_{category}_{f.name}", use_container_width=True):
+                                f.unlink(missing_ok=True)
+                                st.rerun()
+                else:
+                    st.caption("Chưa có outro riêng nào — thêm ở ô bên dưới.")
 
-            new_files = st.file_uploader(
-                f"Thêm outro riêng cho {category}",
-                type=["mp4", "mov", "mkv"], accept_multiple_files=True,
-                key=f"outro_upload_multi_{category}",
-            )
-            if new_files:
-                # File tải lên vẫn còn "dính" trong ô upload ở MỌI lần trang
-                # tự load lại sau đó, nên phải nhớ đã lưu batch NÀY rồi — nếu
-                # không, code sẽ tưởng là file mới, ghi lại + rerun() liên
-                # tục mỗi lần trang tải lại, khiến trang cứ tự nhảy không dừng.
-                sig = tuple((f.name, f.size) for f in new_files)
-                if st.session_state.get(f"outro_saved_sig_{category}") != sig:
-                    for f in new_files:
-                        (mine_dir / f.name).write_bytes(f.getvalue())
-                    st.session_state[f"outro_saved_sig_{category}"] = sig
-                    st.success(f"Đã thêm {len(new_files)} outro riêng vào '{category}'.")
-                    st.rerun()
-            st.divider()
+                new_files = st.file_uploader(
+                    f"Thêm outro riêng cho {category}",
+                    type=["mp4", "mov", "mkv"], accept_multiple_files=True,
+                    key=f"outro_upload_multi_{category}",
+                )
+                if new_files:
+                    # File tải lên vẫn còn "dính" trong ô upload ở MỌI lần trang
+                    # tự load lại sau đó, nên phải nhớ đã lưu batch NÀY rồi — nếu
+                    # không, code sẽ tưởng là file mới, ghi lại + rerun() liên
+                    # tục mỗi lần trang tải lại, khiến trang cứ tự nhảy không dừng.
+                    sig = tuple((f.name, f.size) for f in new_files)
+                    if st.session_state.get(f"outro_saved_sig_{category}") != sig:
+                        for f in new_files:
+                            (mine_dir / f.name).write_bytes(f.getvalue())
+                        st.session_state[f"outro_saved_sig_{category}"] = sig
+                        st.success(f"Đã thêm {len(new_files)} outro riêng vào '{category}'.")
+                        st.rerun()
+                st.divider()
 
+    uploader_label = (
+        "Kéo-thả video cần gắn trademark vào đây" if mode == "trademark"
+        else "Kéo-thả video đối thủ vào đây"
+    )
     uploaded_files = st.file_uploader(
-        "Kéo-thả video đối thủ vào đây",
+        uploader_label,
         type=["mp4", "mov", "mkv", "avi", "webm"],
         accept_multiple_files=True,
         # Key đổi theo "outro_uploader_version" — tăng số này lên (nút xoá
@@ -839,162 +863,182 @@ def render_outro_swap():
             st.session_state.outro_run_error = None
             st.rerun()
 
-    outro_category = st.selectbox("Loại outro của tôi", list(OUTRO_CATEGORY_SLUGS.keys()),
-                                   key="outro_category_choice")
-    # Gộp outro dùng chung (cả team) + outro riêng (của mình) vào chung 1
-    # lưới để tích chọn — mỗi outro gắn "uid" riêng (scope + tên file) vì
-    # 2 file trùng tên nhau (vd 1 outro dùng chung và 1 outro riêng cùng
-    # tên) vẫn phải là 2 ô tích KHÁC NHAU, không được dùng chung 1 key.
-    combined_outros = (
-        [("shared", f) for f in _list_outros(outro_category, "shared")]
-        + [("mine", f) for f in _list_outros(outro_category, "mine", user_id)]
-    )
-
     chosen_outro_path = None
-    if not combined_outros:
-        st.caption(f"Chưa có outro cho '{outro_category}' — không chọn cũng được, vẫn cắt outro đối thủ bình thường.")
-    else:
-        st.write("Chọn outro muốn dùng:")
-        all_uids = [f"{scope}|{f.name}" for scope, f in combined_outros]
-        selected_uid = next(
-            (u for u in all_uids if st.session_state.get(f"outro_tick_{outro_category}_{u}")), None,
+    if mode == "full":
+        outro_category = st.selectbox("Loại outro của tôi", list(OUTRO_CATEGORY_SLUGS.keys()),
+                                       key="outro_category_choice")
+        # Gộp outro dùng chung (cả team) + outro riêng (của mình) vào chung 1
+        # lưới để tích chọn — mỗi outro gắn "uid" riêng (scope + tên file) vì
+        # 2 file trùng tên nhau (vd 1 outro dùng chung và 1 outro riêng cùng
+        # tên) vẫn phải là 2 ô tích KHÁC NHAU, không được dùng chung 1 key.
+        combined_outros = (
+            [("shared", f) for f in _list_outros(outro_category, "shared")]
+            + [("mine", f) for f in _list_outros(outro_category, "mine", user_id)]
         )
-        cols = st.columns(6)
-        picked = []
-        for idx, (scope, f) in enumerate(combined_outros):
-            uid = f"{scope}|{f.name}"
-            with cols[idx % 6]:
-                thumb, dur = _outro_preview(str(f), f.stat().st_mtime)
-                if selected_uid is not None and uid != selected_uid:
-                    thumb = _fade_thumb(thumb)  # KHONG duoc chon -> lam mo trang di, noi bat cai dang chon
-                if thumb is not None:
-                    st.image(thumb, use_container_width=True)
-                tag = " · chung" if scope == "shared" else ""
-                if st.checkbox(
-                    f"{f.stem} ({dur:.1f}s){tag}", key=f"outro_tick_{outro_category}_{uid}",
-                    on_change=_enforce_single_outro_tick,
-                    args=(outro_category, uid, all_uids),
-                ):
-                    picked.append(f)
 
-        if len(picked) == 0:
-            st.caption("Chưa chọn outro — vẫn cắt outro đối thủ bình thường, chỉ không gắn gì vào cuối.")
+        if not combined_outros:
+            st.caption(f"Chưa có outro cho '{outro_category}' — không chọn cũng được, vẫn cắt outro đối thủ bình thường.")
         else:
-            chosen_outro_path = picked[0]
+            st.write("Chọn outro muốn dùng:")
+            all_uids = [f"{scope}|{f.name}" for scope, f in combined_outros]
+            selected_uid = next(
+                (u for u in all_uids if st.session_state.get(f"outro_tick_{outro_category}_{u}")), None,
+            )
+            cols = st.columns(6)
+            picked = []
+            for idx, (scope, f) in enumerate(combined_outros):
+                uid = f"{scope}|{f.name}"
+                with cols[idx % 6]:
+                    thumb, dur = _outro_preview(str(f), f.stat().st_mtime)
+                    if selected_uid is not None and uid != selected_uid:
+                        thumb = _fade_thumb(thumb)  # KHONG duoc chon -> lam mo trang di, noi bat cai dang chon
+                    if thumb is not None:
+                        st.image(thumb, use_container_width=True)
+                    tag = " · chung" if scope == "shared" else ""
+                    if st.checkbox(
+                        f"{f.stem} ({dur:.1f}s){tag}", key=f"outro_tick_{outro_category}_{uid}",
+                        on_change=_enforce_single_outro_tick,
+                        args=(outro_category, uid, all_uids),
+                    ):
+                        picked.append(f)
 
-    with st.expander("Tuỳ chọn nâng cao"):
-        match_threshold = st.number_input(
-            "Ngưỡng nhận outro chung (thấp = khắt khe hơn)",
-            min_value=1, max_value=100, value=outro_core.DEFAULT_MATCH_THRESHOLD, step=1,
-        )
-        max_workers = st.number_input(
-            "Số video xử lý song song (chỉ tăng nếu chạy server riêng — máy chủ "
-            "miễn phí dễ crash nếu để cao)",
-            min_value=1, max_value=16, value=1, step=1, key="outro_max_workers",
-        )
-        safety_margin = st.number_input(
-            "Cắt dư thêm vào nội dung (giây) — chắc chắn không sót outro",
-            min_value=0.0, max_value=2.0, value=0.15, step=0.05, key="outro_safety_margin",
-            help="Tăng lên nếu vẫn thấy sót outro ở cuối video.",
-        )
-        strip_audio = st.checkbox("Bỏ âm thanh trong video kết quả", key="outro_strip_audio")
+            if len(picked) == 0:
+                st.caption("Chưa chọn outro — vẫn cắt outro đối thủ bình thường, chỉ không gắn gì vào cuối.")
+            else:
+                chosen_outro_path = picked[0]
 
-    with st.expander("🏷️ Thêm trademark bay (tuỳ chọn)"):
-        add_trademark = st.checkbox("Gắn trademark vào video kết quả", key="outro_add_trademark")
-        trademark_kind = trademark_text = None
-        trademark_logo_file = None
-        trademark_opacity = trademark_size = trademark_speed = trademark_range = None
-        trademark_font_style = "Đậm"
-        trademark_text_color = "#FFFFFF"
-        trademark_stroke_color = "#000000"
-        trademark_path_style = trademark_core.PATH_STYLES[0]
-        if add_trademark:
-            settings_col, preview_col = st.columns([3, 2])
+    # "Tuỳ chọn nâng cao" chỉ liên quan tới bước DÒ/CẮT outro — chế độ
+    # "trademark" không chạy bước này nên không cần hiện, dùng giá trị mặc
+    # định (không ai đọc tới vì outro_core không được gọi ở chế độ đó).
+    if mode in ("cut", "full"):
+        with st.expander("Tuỳ chọn nâng cao"):
+            match_threshold = st.number_input(
+                "Ngưỡng nhận outro chung (thấp = khắt khe hơn)",
+                min_value=1, max_value=100, value=outro_core.DEFAULT_MATCH_THRESHOLD, step=1,
+            )
+            max_workers = st.number_input(
+                "Số video xử lý song song (chỉ tăng nếu chạy server riêng — máy chủ "
+                "miễn phí dễ crash nếu để cao)",
+                min_value=1, max_value=16, value=1, step=1, key="outro_max_workers",
+            )
+            safety_margin = st.number_input(
+                "Cắt dư thêm vào nội dung (giây) — chắc chắn không sót outro",
+                min_value=0.0, max_value=2.0, value=0.15, step=0.05, key="outro_safety_margin",
+                help="Tăng lên nếu vẫn thấy sót outro ở cuối video.",
+            )
+            strip_audio = st.checkbox("Bỏ âm thanh trong video kết quả", key="outro_strip_audio")
+    else:
+        match_threshold = outro_core.DEFAULT_MATCH_THRESHOLD
+        max_workers = 1
+        safety_margin = 0.15
+        strip_audio = False
 
-            with settings_col:
-                trademark_kind = st.radio(
-                    "Loại trademark", ["Chữ", "Logo/hình ảnh"], key="outro_trademark_kind", horizontal=True,
-                )
-                if trademark_kind == "Chữ":
-                    trademark_text = st.text_input("Nội dung chữ", key="outro_trademark_text")
-                    tm_font_col, tm_color1_col, tm_color2_col = st.columns(3)
-                    trademark_font_style = tm_font_col.selectbox(
-                        "Kiểu chữ", trademark_core.FONT_STYLES, key="outro_trademark_font_style",
-                    )
-                    trademark_text_color = tm_color1_col.color_picker(
-                        "Màu chữ", "#FFFFFF", key="outro_trademark_text_color",
-                    )
-                    trademark_stroke_color = tm_color2_col.color_picker(
-                        "Màu viền", "#000000", key="outro_trademark_stroke_color",
-                    )
-                else:
-                    trademark_logo_file = st.file_uploader(
-                        "Ảnh logo (khuyến khích PNG nền trong suốt)", type=["png", "jpg", "jpeg"],
-                        key="outro_trademark_logo",
-                    )
-                trademark_opacity = st.slider("Độ mờ (%)", 10, 100, 70, key="outro_trademark_opacity")
-                trademark_size = st.slider(
-                    "Độ lớn (% chiều rộng video)", 5, 40, 15, key="outro_trademark_size",
-                )
-                trademark_speed = st.slider(
-                    "Tốc độ bay", 30, 400, 150, key="outro_trademark_speed",
-                )
-                trademark_path_style = st.selectbox(
-                    "Kiểu bay", trademark_core.PATH_STYLES, key="outro_trademark_path_style",
-                    help="Zigzag: nảy khắp khung hình. Vòng tròn: bay theo elip, tốc độ đổi nhanh/chậm.",
-                )
-                trademark_range = st.slider(
-                    "Phạm vi bay (% vùng khả dụng)", 20, 100, 100, key="outro_trademark_range",
-                    help="100% = bay sát hết phạm vi, nhỏ hơn = thu hẹp lại gần giữa.",
-                )
-                st.caption("⚠️ Đường bay đi khắp khung hình, có thể đi qua chủ thể chính.")
+    # Mặc định — chế độ "cut" không đụng gì tới trademark, giữ nguyên các
+    # biến này ở giá trị rỗng để phần xử lý phía dưới khỏi bị NameError.
+    add_trademark = False
+    trademark_kind = trademark_text = None
+    trademark_logo_file = None
+    trademark_opacity = trademark_size = trademark_speed = trademark_range = None
+    trademark_font_style = "Đậm"
+    trademark_text_color = "#FFFFFF"
+    trademark_stroke_color = "#000000"
+    trademark_path_style = trademark_core.PATH_STYLES[0]
 
-            with preview_col:
-                st.caption("👁️ Xem trước nhanh:")
-                preview_overlay = None
-                if trademark_kind == "Chữ" and trademark_text and trademark_text.strip():
-                    preview_overlay = trademark_core.render_text_overlay(
-                        trademark_text.strip(), font_style=trademark_font_style,
-                        text_color=_hex_to_rgba(trademark_text_color),
-                        stroke_color=_hex_to_rgba(trademark_stroke_color),
-                    )
-                elif trademark_kind == "Logo/hình ảnh" and trademark_logo_file is not None:
-                    tmp_logo_dir = Path(tempfile.mkdtemp(prefix="tm_logo_preview_"))
-                    tmp_logo = tmp_logo_dir / f"logo{Path(trademark_logo_file.name).suffix}"
-                    tmp_logo.write_bytes(trademark_logo_file.getvalue())
-                    preview_overlay = trademark_core.load_logo_overlay(tmp_logo)
+    if mode != "cut":
+        expander_title = "🏷️ Cấu hình trademark bay" if mode == "trademark" else "🏷️ Thêm trademark bay (tuỳ chọn)"
+        with st.expander(expander_title, expanded=(mode == "trademark")):
+            if mode == "trademark":
+                # Cả trang này chỉ để làm việc này — khỏi hỏi có muốn không.
+                add_trademark = True
+            else:
+                add_trademark = st.checkbox("Gắn trademark vào video kết quả", key="outro_add_trademark")
+            if add_trademark:
+                settings_col, preview_col = st.columns([3, 2])
 
-                if preview_overlay is None:
-                    st.info("Nhập chữ hoặc tải logo để xem trước.")
-                elif not has_files:
-                    st.info("Tải video lên để xem trước.")
-                else:
-                    first_file = uploaded_files[0]
-                    sample_frame = _sample_frame_from_upload(
-                        first_file.getvalue(), (first_file.name, first_file.size),
-                        Path(first_file.name).suffix,
+                with settings_col:
+                    trademark_kind = st.radio(
+                        "Loại trademark", ["Chữ", "Logo/hình ảnh"], key="outro_trademark_kind", horizontal=True,
                     )
-                    if sample_frame is None:
-                        st.warning("Không đọc được khung hình mẫu từ video đầu tiên.")
+                    if trademark_kind == "Chữ":
+                        trademark_text = st.text_input("Nội dung chữ", key="outro_trademark_text")
+                        tm_font_col, tm_color1_col, tm_color2_col = st.columns(3)
+                        trademark_font_style = tm_font_col.selectbox(
+                            "Kiểu chữ", trademark_core.FONT_STYLES, key="outro_trademark_font_style",
+                        )
+                        trademark_text_color = tm_color1_col.color_picker(
+                            "Màu chữ", "#FFFFFF", key="outro_trademark_text_color",
+                        )
+                        trademark_stroke_color = tm_color2_col.color_picker(
+                            "Màu viền", "#000000", key="outro_trademark_stroke_color",
+                        )
                     else:
-                        preview_bytes = trademark_core.generate_preview_animation(
-                            sample_frame, preview_overlay,
-                            opacity=trademark_opacity / 100, size_percent=trademark_size,
-                            speed_px_per_sec=trademark_speed, path_style=trademark_path_style,
-                            range_percent=trademark_range,
+                        trademark_logo_file = st.file_uploader(
+                            "Ảnh logo (khuyến khích PNG nền trong suốt)", type=["png", "jpg", "jpeg"],
+                            key="outro_trademark_logo",
                         )
-                        # Dùng thẻ <img> nhúng trực tiếp (base64) thay vì
-                        # st.image() — st.image() có thể chỉ hiện khung hình
-                        # ĐẦU TIÊN của ảnh động (không chạy hoạt ảnh), trong
-                        # khi nhúng qua HTML thì trình duyệt luôn tự chạy
-                        # hoạt ảnh WEBP/GIF bình thường (giống cách hiện GIF
-                        # ở màn hình "sắp ra mắt" đã dùng và chạy tốt).
-                        preview_b64 = base64.b64encode(preview_bytes).decode()
-                        st.markdown(
-                            f'<img src="data:image/webp;base64,{preview_b64}" '
-                            'style="width:100%; border-radius:8px;">',
-                            unsafe_allow_html=True,
+                    trademark_opacity = st.slider("Độ mờ (%)", 10, 100, 70, key="outro_trademark_opacity")
+                    trademark_size = st.slider(
+                        "Độ lớn (% chiều rộng video)", 5, 40, 15, key="outro_trademark_size",
+                    )
+                    trademark_speed = st.slider(
+                        "Tốc độ bay", 30, 400, 150, key="outro_trademark_speed",
+                    )
+                    trademark_path_style = st.selectbox(
+                        "Kiểu bay", trademark_core.PATH_STYLES, key="outro_trademark_path_style",
+                        help="Zigzag: nảy khắp khung hình. Vòng tròn: bay theo elip, tốc độ đổi nhanh/chậm.",
+                    )
+                    trademark_range = st.slider(
+                        "Phạm vi bay (% vùng khả dụng)", 20, 100, 100, key="outro_trademark_range",
+                        help="100% = bay sát hết phạm vi, nhỏ hơn = thu hẹp lại gần giữa.",
+                    )
+                    st.caption("⚠️ Đường bay đi khắp khung hình, có thể đi qua chủ thể chính.")
+
+                with preview_col:
+                    st.caption("👁️ Xem trước nhanh:")
+                    preview_overlay = None
+                    if trademark_kind == "Chữ" and trademark_text and trademark_text.strip():
+                        preview_overlay = trademark_core.render_text_overlay(
+                            trademark_text.strip(), font_style=trademark_font_style,
+                            text_color=_hex_to_rgba(trademark_text_color),
+                            stroke_color=_hex_to_rgba(trademark_stroke_color),
                         )
+                    elif trademark_kind == "Logo/hình ảnh" and trademark_logo_file is not None:
+                        tmp_logo_dir = Path(tempfile.mkdtemp(prefix="tm_logo_preview_"))
+                        tmp_logo = tmp_logo_dir / f"logo{Path(trademark_logo_file.name).suffix}"
+                        tmp_logo.write_bytes(trademark_logo_file.getvalue())
+                        preview_overlay = trademark_core.load_logo_overlay(tmp_logo)
+
+                    if preview_overlay is None:
+                        st.info("Nhập chữ hoặc tải logo để xem trước.")
+                    elif not has_files:
+                        st.info("Tải video lên để xem trước.")
+                    else:
+                        first_file = uploaded_files[0]
+                        sample_frame = _sample_frame_from_upload(
+                            first_file.getvalue(), (first_file.name, first_file.size),
+                            Path(first_file.name).suffix,
+                        )
+                        if sample_frame is None:
+                            st.warning("Không đọc được khung hình mẫu từ video đầu tiên.")
+                        else:
+                            preview_bytes = trademark_core.generate_preview_animation(
+                                sample_frame, preview_overlay,
+                                opacity=trademark_opacity / 100, size_percent=trademark_size,
+                                speed_px_per_sec=trademark_speed, path_style=trademark_path_style,
+                                range_percent=trademark_range,
+                            )
+                            # Dùng thẻ <img> nhúng trực tiếp (base64) thay vì
+                            # st.image() — st.image() có thể chỉ hiện khung hình
+                            # ĐẦU TIÊN của ảnh động (không chạy hoạt ảnh), trong
+                            # khi nhúng qua HTML thì trình duyệt luôn tự chạy
+                            # hoạt ảnh WEBP/GIF bình thường (giống cách hiện GIF
+                            # ở màn hình "sắp ra mắt" đã dùng và chạy tốt).
+                            preview_b64 = base64.b64encode(preview_bytes).decode()
+                            st.markdown(
+                                f'<img src="data:image/webp;base64,{preview_b64}" '
+                                'style="width:100%; border-radius:8px;">',
+                                unsafe_allow_html=True,
+                            )
 
     output_name = st.text_input(
         "Đặt tên file xuất ra (tuỳ chọn)",
@@ -1041,11 +1085,20 @@ def render_outro_swap():
                         )
                     made.append(result)
 
-                outro_core.process_outro_swap(
-                    input_paths, chosen_outro_path, workdir, strip_audio,
-                    tail_match_threshold=match_threshold, on_source=on_source,
-                    max_workers=int(max_workers), safety_margin_seconds=safety_margin,
-                )
+                if mode == "trademark":
+                    # Bỏ qua HẲN bước dò/cắt outro — đây là phần NẶNG nhất
+                    # (đọc tail nhiều video, so khớp chéo, so khớp badge...),
+                    # không cần thiết nếu người dùng chỉ muốn gắn trademark.
+                    # Video giữ nguyên 100% nội dung + outro gốc.
+                    for idx, p in enumerate(input_paths, start=1):
+                        made.append({"path": p, "outro_cut_seconds": 0.0, "reason": "skipped"})
+                        status.write(f"[{idx}/{len(input_paths)}] {p.name}: giữ nguyên (không đụng outro).")
+                else:
+                    outro_core.process_outro_swap(
+                        input_paths, chosen_outro_path, workdir, strip_audio,
+                        tail_match_threshold=match_threshold, on_source=on_source,
+                        max_workers=int(max_workers), safety_margin_seconds=safety_margin,
+                    )
 
                 trademark_ready = add_trademark and (
                     (trademark_kind == "Chữ" and trademark_text and trademark_text.strip())
@@ -1274,24 +1327,63 @@ check_ffmpeg()
 # Danh sách công cụ hiện trên thanh menu bên trái — thêm công cụ mới sau này
 # chỉ cần thêm 1 dòng vào đây (icon Material Symbols + nhãn + hàm render),
 # không cần sửa gì chỗ khác. Thứ tự trong list = thứ tự hiện trên menu.
+#
+# Mục "outro" có "children" (thay vì "fn" trực tiếp) — bấm vào mục CHA chỉ
+# MỞ/ĐÓNG danh sách con (không điều hướng đi đâu cả), bấm vào 1 mục CON mới
+# thật sự chuyển trang. Tách theo yêu cầu thực tế: mỗi người dùng chỉ cần 1
+# phần việc khác nhau (người chỉ cần cắt outro, người chỉ cần gắn trademark,
+# người cần làm đầy đủ) — tách nhỏ vừa đỡ rối giao diện, vừa đỡ tốn tài
+# nguyên máy chủ (chế độ "Trademark bay" bỏ qua HẲN bước dò/cắt outro nặng
+# nhất nếu không ai chọn "Cắt outro"/"Đầy đủ").
 NAV_ITEMS = [
-    {"key": "outro", "label": "Outro Solution", "icon": "content_cut", "fn": render_outro_swap},
+    {
+        "key": "outro", "label": "Outro Solution", "icon": "content_cut",
+        "children": [
+            {"key": "outro_cut", "label": "Cắt outro đối thủ", "icon": "content_cut",
+             "fn": lambda: render_outro_swap(mode="cut")},
+            {"key": "outro_trademark", "label": "Trademark bay", "icon": "flare",
+             "fn": lambda: render_outro_swap(mode="trademark")},
+            {"key": "outro_full", "label": "Đầy đủ", "icon": "auto_awesome",
+             "fn": lambda: render_outro_swap(mode="full")},
+        ],
+    },
     {"key": "remix", "label": "Video Remixer", "icon": "shuffle", "fn": render_video_remixer},
     {"key": "logocover", "label": "Logo Cover", "icon": "shield", "fn": render_logo_cover},
 ]
 
+
+def _find_nav_item(key):
+    """Tìm 1 mục nav theo key — dò cả mục cha lẫn mục con (xem NAV_ITEMS)."""
+    for item in NAV_ITEMS:
+        if item["key"] == key:
+            return item
+        for child in item.get("children", []):
+            if child["key"] == key:
+                return child
+    return None
+
+
 if "nav_page" not in st.session_state:
-    st.session_state.nav_page = NAV_ITEMS[0]["key"]
+    # Mặc định vào thẳng "Đầy đủ" — giữ đúng hành vi trước khi tách 3 chế độ,
+    # để ai đã quen dùng không bị bất ngờ.
+    st.session_state.nav_page = NAV_ITEMS[0]["children"][2]["key"]
 if "sidebar_collapsed" not in st.session_state:
     st.session_state.sidebar_collapsed = False
+if "sidebar_group_expanded" not in st.session_state:
+    # Mở sẵn nhóm đang chứa trang active, tránh cảm giác "lạc" lúc mới vào —
+    # 1 set các key mục CHA đang được mở rộng (hiện danh sách con).
+    st.session_state.sidebar_group_expanded = {
+        item["key"] for item in NAV_ITEMS
+        if any(c["key"] == st.session_state.nav_page for c in item.get("children", []))
+    }
 
 
-def _sidebar_state_css(collapsed, active_key):
+def _sidebar_state_css(collapsed, active_key, expanded_groups):
     """CSS ĐỘNG theo trạng thái hiện tại — tách riêng khỏi CSS tĩnh ở đầu
-    file vì phụ thuộc session_state (thu gọn/mở rộng, mục đang chọn), phải
-    tính lại mỗi lần vẽ trang. Thu gọn: chỉ ép hẹp bề rộng thanh bên +
-    ẩn phần chữ (nhãn, tiêu đề, dòng phụ) — vẫn giữ icon để bấm được bình
-    thường, không tắt hẳn."""
+    file vì phụ thuộc session_state (thu gọn/mở rộng, mục đang chọn, nhóm
+    con nào đang mở), phải tính lại mỗi lần vẽ trang. Thu gọn: chỉ ép hẹp bề
+    rộng thanh bên + ẩn phần chữ (nhãn, tiêu đề, dòng phụ) — vẫn giữ icon để
+    bấm được bình thường, không tắt hẳn."""
     width = "76px" if collapsed else "230px"
     label_display = "none" if collapsed else "inline"
     text_display = "none" if collapsed else "block"
@@ -1301,19 +1393,45 @@ def _sidebar_state_css(collapsed, active_key):
         f'.sidebar-title, .sidebar-subtitle, .sidebar-user-email, .st-key-logout_btn button p {{ display: {text_display}; }}',
     ]
     for item in NAV_ITEMS:
+        children = item.get("children", [])
+        child_active = any(c["key"] == active_key for c in children)
         cls = f'.st-key-nav_{item["key"]} button'
-        if item["key"] == active_key:
+        # Mục CHA cũng nổi màu cam khi 1 mục CON của nó đang active — để
+        # người dùng vẫn nhận ra đang ở nhóm nào dù đang xem trang con.
+        if item["key"] == active_key or child_active:
             rules.append(
                 f'{cls} {{ background: rgba(245,166,35,0.16) !important; color: #f5a623 !important; }} '
                 f'{cls} span[data-testid="stIconMaterial"] {{ color: #f5a623 !important; }}'
             )
         else:
             rules.append(f'{cls} span[data-testid="stIconMaterial"] {{ color: #9aa0a6; }}')
+        for child in children:
+            child_cls = f'.st-key-nav_{child["key"]} button'
+            # Thụt vào + chữ nhỏ hơn 1 chút cho mục con — phân biệt trực
+            # quan với mục cha, giống kiểu dropdown/accordion quen thuộc.
+            rules.append(f'{child_cls} {{ padding-left: 2.4rem !important; font-size: 0.86rem; }}')
+            if child["key"] == active_key:
+                rules.append(
+                    f'{child_cls} {{ background: rgba(245,166,35,0.16) !important; color: #f5a623 !important; }} '
+                    f'{child_cls} span[data-testid="stIconMaterial"] {{ color: #f5a623 !important; }}'
+                )
+            else:
+                rules.append(f'{child_cls} span[data-testid="stIconMaterial"] {{ color: #9aa0a6; }}')
+            # Ẩn hẳn mục con khi: sidebar đang thu gọn (icon-only, không đủ
+            # chỗ hiện chữ) HOẶC nhóm cha của nó đang đóng.
+            if collapsed or item["key"] not in expanded_groups:
+                rules.append(f'.st-key-nav_{child["key"]} {{ display: none !important; }}')
     return "<style>" + "\n".join(rules) + "</style>"
 
 
 with st.sidebar:
-    st.markdown(_sidebar_state_css(st.session_state.sidebar_collapsed, st.session_state.nav_page), unsafe_allow_html=True)
+    st.markdown(
+        _sidebar_state_css(
+            st.session_state.sidebar_collapsed, st.session_state.nav_page,
+            st.session_state.sidebar_group_expanded,
+        ),
+        unsafe_allow_html=True,
+    )
 
     # Vùng TRÊN (thương hiệu + nút thu gọn/mở rộng) tách biệt hẳn khỏi danh
     # sách công cụ ở giữa — có khung riêng (viền dưới), xem .st-key-sidebar_header.
@@ -1332,12 +1450,43 @@ with st.sidebar:
             st.rerun()
 
     for item in NAV_ITEMS:
+        children = item.get("children", [])
+        if not children:
+            if st.button(
+                item["label"], icon=f":material/{item['icon']}:", key=f"nav_{item['key']}",
+                use_container_width=True,
+            ):
+                st.session_state.nav_page = item["key"]
+                st.rerun()
+            continue
+
+        # Mục có mục con: bấm vào CHỈ đóng/mở danh sách con, KHÔNG điều
+        # hướng đi đâu — người dùng bấm đúng mục con mới thật sự chuyển
+        # trang (xem docstring NAV_ITEMS). Mũi tên ▾/▸ ở cuối nhãn báo trạng
+        # thái đóng/mở, giống kiểu accordion quen thuộc.
+        is_expanded = item["key"] in st.session_state.sidebar_group_expanded
+        arrow = "▾" if is_expanded else "▸"
         if st.button(
-            item["label"], icon=f":material/{item['icon']}:", key=f"nav_{item['key']}",
+            f'{item["label"]} {arrow}', icon=f":material/{item['icon']}:", key=f"nav_{item['key']}",
             use_container_width=True,
         ):
-            st.session_state.nav_page = item["key"]
+            if st.session_state.sidebar_collapsed:
+                # Sidebar đang thu gọn (icon-only) — không có chỗ hiện mục
+                # con, nên mở rộng sidebar ra trước khi mở nhóm.
+                st.session_state.sidebar_collapsed = False
+            if is_expanded:
+                st.session_state.sidebar_group_expanded.discard(item["key"])
+            else:
+                st.session_state.sidebar_group_expanded.add(item["key"])
             st.rerun()
+
+        for child in children:
+            if st.button(
+                child["label"], icon=f":material/{child['icon']}:", key=f"nav_{child['key']}",
+                use_container_width=True,
+            ):
+                st.session_state.nav_page = child["key"]
+                st.rerun()
 
     # Vùng DƯỚI (tài khoản/đăng xuất) — ghim hẳn xuống cuối, tách biệt bằng
     # viền trên, xem .st-key-sidebar_footer.
@@ -1351,5 +1500,5 @@ with st.sidebar:
             on_click=_do_logout,
         )
 
-active_item = next(x for x in NAV_ITEMS if x["key"] == st.session_state.nav_page)
+active_item = _find_nav_item(st.session_state.nav_page) or NAV_ITEMS[0]["children"][2]
 active_item["fn"]()
