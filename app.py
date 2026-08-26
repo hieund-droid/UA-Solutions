@@ -26,7 +26,7 @@ import shutil
 import tempfile
 import uuid
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import cv2
@@ -1483,28 +1483,92 @@ def render_personal_library():
             st.rerun()
 
 
-_EVENT_CATEGORY_ACCENT = {"official": "#111111", "shopping": "#f5a623", "unofficial": "#9aa0a6"}
+_EVENT_CATEGORY_ACCENT = {"official": "#111111", "unofficial": "#9aa0a6"}
 _VN_MONTH_NAMES = {
     1: "Tháng 1", 2: "Tháng 2", 3: "Tháng 3", 4: "Tháng 4", 5: "Tháng 5", 6: "Tháng 6",
     7: "Tháng 7", 8: "Tháng 8", 9: "Tháng 9", 10: "Tháng 10", 11: "Tháng 11", 12: "Tháng 12",
 }
+# Số nước từ đó trở lên thì hiện gọn "🌍 Global (N quốc gia)" thay vì liệt
+# kê từng cờ — CHỈ áp dụng khi sự kiện thực sự phủ phần lớn danh sách quốc
+# gia đang theo dõi (13 nước), tránh nói quá ("global" mà thiếu >1/3 số
+# nước thì gây hiểu lầm) — ngưỡng chọn dựa trên dữ liệu thật sau khi gộp
+# (New Year's Day/Christmas Day ở mức 11-12/13, đây là mức cao nhất hiện
+# có) — 8 là mốc "đa số rõ ràng" hợp lý cho các nhóm nhỏ hơn.
+_GLOBAL_LABEL_THRESHOLD = 8
+# Khoảng thời gian xem trước — nhãn tiếng Anh chuyên nghiệp theo yêu cầu
+# thực tế (khác phần còn lại của trang, vốn dùng tiếng Việt) — mỗi option
+# tính "until" (ngày cuối cùng lấy sự kiện) khác nhau qua _event_range_until()
+# bên dưới, luôn tính từ HÔM NAY (không nhảy cóc bỏ qua phần còn lại của
+# tháng hiện tại).
+_EVENT_RANGE_OPTIONS = ["This Month", "Next Month", "Next 3 Months", "Until End of Year", "Next Year"]
+
+
+def _event_range_until(range_key, today):
+    """Tính ngày "until" (bao gồm) cho từng lựa chọn khoảng thời gian —
+    LUÔN tính khoảng từ hôm nay (không bỏ qua phần còn lại của tháng hiện
+    tại), chỉ khác nhau ở điểm KẾT THÚC."""
+    if range_key == "This Month":
+        # ngay cuoi cung cua thang hien tai
+        if today.month == 12:
+            return date(today.year, 12, 31)
+        return date(today.year, today.month + 1, 1) - timedelta(days=1)
+    if range_key == "Next Month":
+        # het thang ke tiep
+        y, m = today.year, today.month + 1
+        m2 = m + 1
+        y2 = y
+        if m2 > 12:
+            m2 -= 12
+            y2 += 1
+        if m > 12:
+            m -= 12
+            y += 1
+        return date(y2, m2, 1) - timedelta(days=1)
+    if range_key == "Next 3 Months":
+        y, m = today.year, today.month + 3
+        y += (m - 1) // 12
+        m = (m - 1) % 12 + 1
+        m2 = m + 1
+        y2 = y
+        if m2 > 12:
+            m2 -= 12
+            y2 += 1
+        return date(y2, m2, 1) - timedelta(days=1)
+    if range_key == "Next Year":
+        return date(today.year + 1, 12, 31)
+    # "Until End of Year" (mac dinh)
+    return date(today.year, 12, 31)
 
 
 def render_events():
     """Trang 'Events' — liệt kê ngày lễ/sự kiện SẮP TỚI theo quốc gia, để
     team UA biết trước mà chuẩn bị ads (đổi outro theo mùa, tăng ngân sách
-    trước Black Friday...). Mỗi mục có nguồn kiểm chứng riêng (xem
+    trước dịp lớn...). Mỗi mục có nguồn kiểm chứng riêng (xem
     events_data.py) — KHÔNG tự bịa ngày theo trí nhớ khi thêm dữ liệu mới.
+    Loại "sự kiện mua sắm" đã bỏ (2026-08-27, theo yêu cầu thực tế — team
+    không cần theo dõi riêng loại này) — chỉ còn "Lễ chính thức" và "Không
+    chính thức".
 
     Giao diện tự vẽ bằng HTML/CSS riêng (thay vì st.container mặc định) để
-    khớp tông màu chung của app: đen #111111 (trung tính/lễ chính thức),
-    cam #f5a623 (đúng màu nhấn đang dùng cho mục đang chọn ở sidebar — gán
-    cho "sự kiện mua sắm" vì đây là loại quan trọng nhất với ads/UA, nên
-    nổi bật nhất), xám nhạt (không chính thức). Nhóm theo THÁNG để quét
-    nhanh "tháng tới có gì" thay vì 1 danh sách phẳng dài."""
+    khớp tông màu chung của app: đen #111111 (lễ chính thức), xám nhạt
+    (không chính thức). Nhóm theo THÁNG để quét nhanh "tháng tới có gì"
+    thay vì 1 danh sách phẳng dài.
+
+    1 sự kiện có thể diễn ra ở NHIỀU nước cùng lúc (vd New Year's Day) —
+    events_data.py gộp các trường hợp này thành 1 mục duy nhất với
+    "countries" là 1 danh sách, thay vì lặp lại từng nước riêng (đỡ rối)."""
     st.title(":material/event: Events")
+
+    range_col, _ = st.columns([1, 3])
+    with range_col:
+        range_choice = st.selectbox(
+            "Time range", _EVENT_RANGE_OPTIONS,
+            index=_EVENT_RANGE_OPTIONS.index("Until End of Year"),
+            key="events_range_filter",
+        )
+    until = _event_range_until(range_choice, date.today())
     st.caption(
-        f"Ngày lễ/sự kiện sắp tới TỪ NAY ĐẾN HẾT NĂM {date.today().year} theo từng quốc gia — mỗi mục "
+        f"Ngày lễ/sự kiện sắp tới TỪ NAY ĐẾN {until.strftime('%d/%m/%Y')} theo từng quốc gia — mỗi mục "
         "đều có nguồn kiểm chứng kèm theo."
     )
 
@@ -1573,13 +1637,15 @@ def render_events():
             format_func=lambda c: events_data.CATEGORY_LABELS[c], key="events_category_filter",
         )
 
-    # Chỉ hiện tới hết năm nay — dữ liệu ngày âm lịch/tôn giáo phải cập
-    # nhật lại mỗi năm (xem events_data.py), đoán xa hơn 1 năm dễ sai. Kỹ
-    # lưỡng trong phạm vi chắc chắn còn hơn dàn trải xa mà thiếu chính xác.
+    # Phạm vi ngày lấy theo lựa chọn "Time range" ở trên — mặc định hết năm
+    # nay, vì dữ liệu ngày âm lịch/tôn giáo phải cập nhật lại mỗi năm (xem
+    # events_data.py), đoán xa hơn 1 năm dễ sai. Kỹ lưỡng trong phạm vi chắc
+    # chắn còn hơn dàn trải xa mà thiếu chính xác.
     rows = events_data.upcoming_events(
         countries=country_choice or None,
         tiers=tier_choice or None,
         categories=category_choice or None,
+        until=until,
     )
 
     stale = [ev for ev in events_data.EVENTS if events_data.needs_update(ev, date.today())]
@@ -1587,7 +1653,7 @@ def render_events():
         st.warning(
             f"⚠️ {len(stale)} sự kiện âm lịch/tôn giáo đã qua ngày lưu sẵn, cần vào cập nhật lại "
             "ngày kỳ tới (xem events_data.py) — tạm ẩn khỏi danh sách dưới đây: "
-            + ", ".join(f"{ev['name']} ({ev['country']})" for ev in stale)
+            + ", ".join(f"{ev['name']} ({'/'.join(ev['countries'])})" for ev in stale)
         )
 
     if not rows:
@@ -1605,8 +1671,15 @@ def render_events():
             cards_html.append(f'<div class="event-month-header">{month_label}</div>')
 
         days_left = (d - today).days
-        country_name, _ = events_data.COUNTRIES.get(ev["country"], (ev["country"], None))
-        flag = events_data.COUNTRY_FLAGS.get(ev["country"], "")
+        countries = ev["countries"]
+        if len(countries) >= _GLOBAL_LABEL_THRESHOLD:
+            # Phủ phần lớn danh sách quốc gia đang theo dõi — gọn thành 1
+            # dòng thay vì liệt kê 8-12 lá cờ (rối mắt), nhưng vẫn ghi rõ
+            # SỐ nước thay vì nói "Global" trơn — tránh nói quá khi thực tế
+            # có thể vẫn thiếu 1-2 nước (vd New Year's Day thiếu Ấn Độ).
+            country_label = f"🌍 Global ({len(countries)} quốc gia)"
+        else:
+            country_label = " ".join(events_data.COUNTRY_FLAGS.get(c, c) for c in countries)
         accent = _EVENT_CATEGORY_ACCENT.get(ev["category"], "#9aa0a6")
         title = ev["name"] + (f" ({ev['local_name']})" if ev.get("local_name") else "")
         badge_style = (
@@ -1622,7 +1695,7 @@ def render_events():
             f'<div class="event-card" style="--accent:{accent}">'
             f'<div>'
             f'<span class="event-badge" style="{badge_style}">{events_data.CATEGORY_LABELS[ev["category"]]}</span>'
-            f'<span class="event-card-title">{flag} {title} — {country_name}</span>'
+            f'<span class="event-card-title">{country_label} {title}</span>'
             f'<div class="event-card-sub">{" · ".join(sub_bits)} · '
             f'<a class="event-source" href="{ev["source"]}" target="_blank">🔗 Nguồn</a></div>'
             f'</div>'
