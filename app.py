@@ -1591,6 +1591,23 @@ def render_events():
     st.markdown(
         """
         <style>
+        /* QUAN TRỌNG — dark mode: người dùng thật báo chữ tiêu đề sự kiện
+        biến mất khi máy họ đặt nền tối (ảnh chụp cho thấy chữ đen trống
+        trơn trên nền tối). Đã thử dùng var(--text-color)/var(--...) — biến
+        CSS mà Streamlit ĐƯỢC CHO là tự cấp phát theo theme — nhưng kiểm tra
+        trực tiếp trên app đang chạy (getComputedStyle) thì biến đó KHÔNG hề
+        tồn tại ở bản Streamlit 1.60 đang dùng (rỗng), nên cách đó không
+        đáng tin cậy để dựa vào. Đổi sang cách CHẮC CHẮN hơn nhiều: gói CẢ
+        KHỐI danh sách sự kiện trong 1 nền TRẮNG CỐ ĐỊNH riêng
+        (.event-list-panel bên dưới) — giống hệt cách .event-days/
+        .event-badge vốn đã làm đúng từ đầu (tự mang nền riêng, không phụ
+        thuộc nền trang) — nhờ vậy chữ đen bên trong LUÔN đủ tương phản với
+        đúng nền của chính nó, bất kể trang xung quanh đang sáng/tối theo
+        cơ chế nào (Streamlit tự đổi theme, hay trình duyệt/OS tự làm tối
+        trang) — không cần biết/đoán đúng cơ chế đó hoạt động ra sao nữa. */
+        .event-list-panel {
+            background: #ffffff; border-radius: 14px; padding: 4px 16px 12px 16px;
+        }
         .event-card {
             display: flex; justify-content: space-between; align-items: center; gap: 14px;
             border: 1px solid #ebebec; border-radius: 12px; padding: 14px 18px 14px 16px;
@@ -1680,7 +1697,10 @@ def render_events():
 
     today = date.today()
     current_month_key = None
-    cards_html = []
+    # Bọc trong 1 nền trắng cố định riêng (.event-list-panel) — xem giải
+    # thích ở khối CSS phía trên, đây là phần fix chính cho lỗi chữ biến
+    # mất khi trang nền tối.
+    cards_html = ['<div class="event-list-panel">']
     for d, ev in rows:
         month_key = (d.year, d.month)
         if month_key != current_month_key:
@@ -1727,6 +1747,7 @@ def render_events():
             f'<div class="event-days{urgent_cls}">{days_label}</div>'
             f'</div>'
         )
+    cards_html.append('</div>')
     st.markdown("\n".join(cards_html), unsafe_allow_html=True)
 
 

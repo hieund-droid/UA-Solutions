@@ -1,6 +1,16 @@
 [server]
 maxUploadSize = 2048
 
+[client]
+# Ẩn menu "developer" (Rerun/Clear cache/Record screen...) khỏi người dùng
+# — đây là công cụ nội bộ, người dùng thường không cần các thao tác dev
+# này. Lý do chính: phím tắt "C" = Clear cache của Streamlit không kiểm
+# tra có giữ Ctrl hay không, nên bôi đen văn bản rồi bấm Ctrl+C để COPY lại
+# bị hiểu nhầm thành phím tắt xoá cache, hiện popup xác nhận — phản hồi
+# thật từ người dùng. "minimal" ẩn hẳn menu này (và phím tắt đi kèm), gọn
+# hơn cho người dùng cuối, không mất chức năng nào họ thực sự cần.
+toolbarMode = "minimal"
+
 [theme]
 base = "light"
 primaryColor = "#111111"
