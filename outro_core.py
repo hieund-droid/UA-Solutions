@@ -59,6 +59,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import drive_sync
 from remix_core import concat_clips, ffprobe_info, split_clips
 
 # Thư viện outro đối thủ ĐÃ TỪNG NHẬN DIỆN ĐƯỢC — dùng chung cho cả team
@@ -613,6 +614,9 @@ def _save_to_known_library(video_path, outro_start, duration, threshold, workdir
     clips[0].rename(out_path)
     for c in clips[1:]:
         c.unlink(missing_ok=True)
+    # Đẩy lên Drive ngay — outro tự nhận diện này chỉ tồn tại trên đĩa cục
+    # bộ (không bền vững, xem drive_sync.py) cho tới khi có bước này.
+    drive_sync.push_file(out_path)
     return out_path
 
 

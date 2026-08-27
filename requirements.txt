@@ -3,3 +3,5 @@ scenedetect
 opencv-contrib-python-headless
 numpy
 streamlit-cropper
+google-api-python-client
+google-auth

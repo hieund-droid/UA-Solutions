@@ -37,6 +37,7 @@ from PIL import Image
 from streamlit_cropper import st_cropper
 
 import remix_core as core
+import drive_sync
 import outro_core
 import trademark_core
 import events_data
@@ -922,6 +923,7 @@ def render_outro_swap(mode="full"):
                         dur = _outro_duration(str(f), f.stat().st_mtime)
                         st.caption(f"{dur:.1f}s")
                         if st.button("🗑️ Xoá", key=f"del_known_outro_{f.name}", use_container_width=True):
+                            drive_sync.delete_remote(f)
                             f.unlink(missing_ok=True)
                             st.rerun()
 
@@ -1460,9 +1462,12 @@ def render_personal_library():
                             if new_path.exists():
                                 st.error(f"Đã có outro tên '{clean_name}' rồi, chọn tên khác.")
                             else:
+                                old_path = f
                                 f.rename(new_path)
+                                drive_sync.rename_remote(old_path, new_path.name)
                                 st.rerun()
                     if dcol.button("🗑️ Xoá", key=f"del_outro_{category}_{f.name}", use_container_width=True):
+                        drive_sync.delete_remote(f)
                         f.unlink(missing_ok=True)
                         st.rerun()
         else:
@@ -1481,7 +1486,9 @@ def render_personal_library():
             sig = tuple((f.name, f.size) for f in new_files)
             if st.session_state.get(f"outro_saved_sig_{category}") != sig:
                 for f in new_files:
-                    (mine_dir / f.name).write_bytes(f.getvalue())
+                    saved_path = mine_dir / f.name
+                    saved_path.write_bytes(f.getvalue())
+                    drive_sync.push_file(saved_path)
                 st.session_state[f"outro_saved_sig_{category}"] = sig
                 st.success(f"Đã thêm {len(new_files)} outro riêng vào '{category}'.")
                 st.rerun()
@@ -1521,9 +1528,12 @@ def render_personal_library():
                         if new_path.exists():
                             st.error(f"Đã có logo tên '{clean_name}' rồi, chọn tên khác.")
                         else:
+                            old_path = f
                             f.rename(new_path)
+                            drive_sync.rename_remote(old_path, new_path.name)
                             st.rerun()
                 if dcol.button("🗑️ Xoá", key=f"del_logo_btn_{f.name}", use_container_width=True):
+                    drive_sync.delete_remote(f)
                     f.unlink(missing_ok=True)
                     st.rerun()
     else:
@@ -1537,7 +1547,9 @@ def render_personal_library():
         sig = tuple((f.name, f.size) for f in new_logos_multi)
         if st.session_state.get("logo_saved_sig_multi") != sig:
             for f in new_logos_multi:
-                (mine_logo_dir / f.name).write_bytes(f.getvalue())
+                saved_path = mine_logo_dir / f.name
+                saved_path.write_bytes(f.getvalue())
+                drive_sync.push_file(saved_path)
             st.session_state["logo_saved_sig_multi"] = sig
             st.success(f"Đã thêm {len(new_logos_multi)} logo vào thư viện.")
             st.rerun()
@@ -1812,6 +1824,21 @@ def render_events():
 
 
 check_ffmpeg()
+
+
+@st.cache_resource(show_spinner=False)
+def _sync_drive_once():
+    """Tải outro/logo/known_outros đã lưu trên Drive về đĩa cục bộ — CHỈ 1
+    LẦN cho cả vòng đời tiến trình (st.cache_resource, không phải mỗi lần
+    trang tự tải lại) — xem drive_sync.py để biết vì sao cần cái này (ổ đĩa
+    Streamlit Cloud không bền vững, mất dữ liệu mỗi lần container dựng lại
+    — phản hồi thật từ người dùng). Tự động NO-OP nếu chưa cấu hình Secrets
+    `[gdrive]` — không chặn app chạy nếu ai đó chưa setup Drive."""
+    drive_sync.sync_down_all()
+    return True
+
+
+_sync_drive_once()
 
 # Danh sách công cụ hiện trên thanh menu bên trái — thêm công cụ mới sau này
 # chỉ cần thêm 1 dòng vào đây (icon Material Symbols + nhãn + hàm render),
