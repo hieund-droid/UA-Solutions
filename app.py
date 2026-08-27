@@ -1068,13 +1068,29 @@ def render_outro_swap(mode="full"):
 
                 def on_source(done, total, name, result):
                     reason = result["reason"]
+                    # Việc lưu outro vào "Thư viện outro đã nhận diện" là TỰ
+                    # ĐỘNG (xem outro_core._save_to_known_library) — không
+                    # có nút nào để bấm, phản hồi thật: người dùng không
+                    # biết chuyện này đang tự xảy ra, tưởng thiếu 1 tuỳ
+                    # chọn. Thêm dòng xác nhận rõ ràng ngay dưới kết quả cắt
+                    # mỗi khi video vừa cắt được tự động thêm vào thư viện.
+                    # KHÔNG chỉ hướng "xem expander..." — expander đó nằm ở
+                    # PHÍA TRÊN trong luồng trang (được vẽ trước cả nút "Xử
+                    # lý"), số lượng hiển thị ở đó chỉ cập nhật ở lần chạy
+                    # SAU (Streamlit không tự vẽ lại phần đã hiện xong trong
+                    # cùng 1 lượt chạy) — nói "xem bên dưới" sẽ sai hướng và
+                    # gây hiểu nhầm là thấy ngay lập tức.
+                    saved_note = (
+                        " · 📚 đã tự động thêm vào thư viện outro dùng chung"
+                        if result.get("saved_to_library") else ""
+                    )
                     if reason == "matched":
-                        status.write(f"[{done}/{total}] ✓ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro (khớp với video khác)")
+                        status.write(f"[{done}/{total}] ✓ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro (khớp với video khác){saved_note}")
                     elif reason == "solo_badge":
                         status.write(
                             f"[{done}/{total}] ✓ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro "
                             "(không có video nào khác để so khớp, nhưng dò được điểm chuyển cảnh + "
-                            "nhận ra badge Google Play/App Store)"
+                            f"nhận ra badge Google Play/App Store){saved_note}"
                         )
                     elif reason == "solo_scene":
                         status.write(

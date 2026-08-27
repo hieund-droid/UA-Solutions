@@ -793,6 +793,14 @@ def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, work
         content_end = info["duration"]
         boundary = {"outro_start": None, "reason": "none"}
 
+    # saved_to_library: True CHỈ khi _save_to_known_library thực sự lưu ra
+    # 1 file mới (trả về Path) — False nếu không đủ điều kiện thử lưu, HOẶC
+    # có thử nhưng bị coi là trùng lặp với outro đã có sẵn (trả về None),
+    # HOẶC lỗi. Trả ra ngoài (khác trước đây — âm thầm bỏ qua) để app.py
+    # báo cho người dùng biết CHÍNH XÁC video nào vừa được tự động thêm vào
+    # thư viện — phản hồi thật: người dùng không biết việc này đang tự động
+    # xảy ra, tưởng thiếu 1 nút "lưu vào thư viện".
+    saved_to_library = False
     if boundary["reason"] in ("matched", "solo_badge") and content_end < info["duration"] - 0.05:
         # Cắt được ĐỦ TIN CẬY (khớp chéo trong mẻ, hoặc dò-đơn-lẻ có badge
         # xác nhận — KHÔNG lưu từ "library_match"/"solo_scene" để tránh
@@ -801,7 +809,8 @@ def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, work
         # outro này (dù không có gì so khớp chéo trong mẻ) vẫn nhận ra
         # được. Lỗi ở bước này KHÔNG được làm hỏng video đang xử lý.
         try:
-            _save_to_known_library(p, content_end, info["duration"], tail_match_threshold, clips_dir)
+            saved_path = _save_to_known_library(p, content_end, info["duration"], tail_match_threshold, clips_dir)
+            saved_to_library = saved_path is not None
         except Exception:
             pass
 
@@ -822,7 +831,10 @@ def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, work
     for c in all_clips:
         c.unlink(missing_ok=True)
 
-    return {"path": out_path, "outro_cut_seconds": cut_seconds, "reason": boundary["reason"]}
+    return {
+        "path": out_path, "outro_cut_seconds": cut_seconds, "reason": boundary["reason"],
+        "saved_to_library": saved_to_library,
+    }
 
 
 def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
@@ -852,7 +864,10 @@ def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
 
     Trả về list dict (đúng thứ tự `paths`): {"path": Path video kết quả,
     "outro_cut_seconds": số giây outro đối thủ đã cắt (0 nếu không cắt được
-    gì), "reason": xem find_outro_boundaries()}.
+    gì), "reason": xem find_outro_boundaries(), "saved_to_library": True nếu
+    outro vừa cắt được TỰ ĐỘNG thêm vào thư viện dùng chung (KNOWN_OUTRO_DIR)
+    — chỉ xảy ra khi reason là "matched"/"solo_badge" VÀ chưa có sẵn outro
+    giống hệt trong thư viện, xem _process_one_video/_save_to_known_library}.
     """
     workdir = Path(workdir)
     clips_dir = workdir / "clips"
