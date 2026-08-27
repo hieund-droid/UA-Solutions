@@ -125,6 +125,18 @@ DEFAULT_MATCH_THRESHOLD = 15
 # "nuốt" gần hết/hết cả video, tạo ra 1 đoạn nội dung gần như rỗng làm hỏng
 # bước ghép clip (đã gặp thật, xem comment tại chỗ dùng).
 MIN_CONTENT_SECONDS = 1.0
+# Ngưỡng NGƯỢC LẠI với MIN_CONTENT_SECONDS ở trên — MIN_CONTENT_SECONDS chặn
+# "cắt QUÁ TAY" (nuốt gần hết video), còn ngưỡng này chặn "cắt QUÁ ÍT" (gần
+# như không cắt gì) ở lớp "matched"/"library_match" — đã gặp thật (báo lỗi
+# thực tế 2026-08-27): 1 video trong mẻ 31 video CÙNG outro bị "khớp chéo"
+# NHẦM với 1 video khác (trùng hợp ngẫu nhiên, không phải cùng outro thật),
+# ra ranh giới nằm SÁT mép cuối video (cắt được chưa tới nửa giây) — vẫn đủ
+# "hợp lệ" để qua được MIN_CONTENT_SECONDS, nên lớp dự phòng "solo" (dò
+# điểm chuyển cảnh + badge — TỰ TEST TRỰC TIẾP trên đúng video lỗi này, tìm
+# đúng ranh giới chuẩn xác) không bao giờ có cơ hội được thử, vì hệ thống
+# tưởng đã "matched" xong rồi. Xem đoạn đối soát ngay dưới
+# find_outro_boundaries() để biết cách vá.
+MATCHED_SUSPICIOUS_CUT_SECONDS = 0.5
 
 
 def _pick_larger_spec(info_a, info_b):
@@ -757,6 +769,35 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
             outro_start = max(solo["outro_start"] - safety_margin_seconds, 0.0)
             reason = "solo_badge" if solo["confidence"] == "badge" else "solo_scene"
             results[i] = {"outro_start": outro_start, "reason": reason}
+
+        # ĐỐI SOÁT lại các video "matched"/"library_match" nhưng cắt được
+        # QUÁ ÍT (xem MATCHED_SUSPICIOUS_CUT_SECONDS) — rất có thể là khớp
+        # chéo NHẦM (trùng hợp ngẫu nhiên gần mép cuối, không phải cùng
+        # outro thật). Thử thêm lớp solo — chấp nhận CẢ "solo_scene" (không
+        # chỉ riêng "solo_badge" xác nhận được badge) MIỄN LÀ cắt được
+        # NHIỀU HƠN HẲN kết quả matched/library_match hiện tại: kết quả
+        # "matched" đang xét đã tự nó ĐÁNG NGỜ (cắt gần như 0 giây dù báo
+        # "đã khớp") — thay bằng 1 kết quả solo dù chưa chắc chắn tuyệt đối
+        # vẫn AN TOÀN HƠN là giữ nguyên 1 kết quả gần như chắc chắn sai (đã
+        # test trực tiếp trên video lỗi thật, xem outro-empty-concat memory
+        # — badge template hiện có vẫn còn yếu, đòi hỏi bắt buộc "badge" sẽ
+        # bỏ lỡ phần lớn trường hợp cần cứu này). Vẫn giữ reason đúng theo
+        # độ tin cậy thật của solo (badge hay scene) để UI báo đúng mức độ
+        # tin cậy cho người dùng biết mà soát lại.
+        for i in range(n):
+            if results[i]["reason"] not in ("matched", "library_match"):
+                continue
+            cut_seconds = durations[i] - results[i]["outro_start"]
+            if cut_seconds >= MATCHED_SUSPICIOUS_CUT_SECONDS:
+                continue
+            solo = find_solo_outro_boundary(paths[i], durations[i], infos[i]["fps"] or 30)
+            if solo is None:
+                continue
+            solo_outro_start = max(solo["outro_start"] - safety_margin_seconds, 0.0)
+            solo_cut_seconds = durations[i] - solo_outro_start
+            if solo_cut_seconds > cut_seconds:
+                reason = "solo_badge" if solo["confidence"] == "badge" else "solo_scene"
+                results[i] = {"outro_start": solo_outro_start, "reason": reason}
 
     return results
 
