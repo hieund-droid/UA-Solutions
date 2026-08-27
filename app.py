@@ -19,6 +19,7 @@
 """
 
 import base64
+import hashlib
 import io
 import random
 import re
@@ -441,6 +442,36 @@ def save_uploads(uploaded_files, prefix="video_remixer_"):
         p.write_bytes(f.getvalue())
         paths.append(p)
     return workdir, paths
+
+
+@st.cache_data(show_spinner=False, max_entries=200, ttl=6 * 3600)
+def _cached_find_outro_boundaries(content_hashes, threshold, safety_margin_seconds, _paths):
+    """Bọc outro_core.find_outro_boundaries() qua st.cache_data — đây là
+    bước NẶNG NHẤT trong cả quy trình cắt outro (đọc tuần tự nhiều giây
+    hình ảnh mỗi video, so khớp chéo, dò-đơn-lẻ scene-cut+badge...), nhưng
+    kết quả CHỈ phụ thuộc vào chính NỘI DUNG video đối thủ + 2 ngưỡng dò,
+    KHÔNG phụ thuộc outro của bạn/trademark/tên file xuất ra — phản hồi
+    thật: "gen lại" đúng mẻ video cũ (chỉ đổi cấu hình PHÍA SAU bước dò)
+    vẫn phải chờ dò lại từ đầu, dù kết quả chắc chắn giống hệt lần trước.
+
+    `content_hashes`: tuple hash NỘI DUNG THẬT của từng video (không phải
+    đường dẫn — save_uploads() tạo file tạm tên MỚI mỗi lần chạy, đường dẫn
+    không bao giờ trùng nên không dùng làm khoá cache được) — đây mới là
+    phần Streamlit dùng để so khớp cache HIT/MISS giữa các lần chạy.
+
+    `_paths`: đường dẫn thật trên đĩa CỦA LẦN CHẠY NÀY — dấu gạch dưới ở
+    đầu tên tham số để Streamlit KHÔNG tính vào khoá cache (chỉ dùng để đọc
+    file thật khi thực sự cần tính lại, tức cache MISS — quy ước riêng của
+    st.cache_data).
+
+    Đánh đổi đã chấp nhận: nếu giữa 2 lần "gen lại" có người khác vừa thêm
+    outro MỚI vào thư viện dùng chung (known_outros/), lần gen lại sau vẫn
+    cache HIT nên KHÔNG biết tới outro mới đó — không sai (không cắt nhầm
+    gì cả, chỉ là bỏ lỡ 1 cơ hội tối ưu thêm), và ttl=6 tiếng tự hết hạn để
+    cache không "kẹt" quá lâu nếu quay lại dùng vào hôm khác."""
+    return outro_core.find_outro_boundaries(
+        list(_paths), threshold, safety_margin_seconds, enable_solo_detection=True,
+    )
 
 
 def _sanitize_name_prefix(name):
@@ -1123,10 +1154,23 @@ def render_outro_swap(mode="full"):
                         made.append({"path": p, "outro_cut_seconds": 0.0, "reason": "skipped"})
                         status.write(f"[{idx}/{len(input_paths)}] {p.name}: giữ nguyên (không đụng outro).")
                 else:
+                    # Dò outro qua wrapper có CACHE (xem _cached_find_outro_
+                    # boundaries) — nếu đúng mẻ video này (nội dung giống
+                    # hệt) đã dò rồi, bỏ qua HẲN bước dò nặng nhất, chỉ còn
+                    # lại bước cắt/ghép thật sự cần làm lại khi đổi cấu
+                    # hình (outro của bạn/trademark/tên file).
+                    content_hashes = tuple(
+                        hashlib.blake2b(f.getvalue(), digest_size=16).hexdigest()
+                        for f in uploaded_files
+                    )
+                    boundaries = _cached_find_outro_boundaries(
+                        content_hashes, match_threshold, safety_margin, input_paths,
+                    )
                     outro_core.process_outro_swap(
                         input_paths, chosen_outro_path, workdir, strip_audio,
                         tail_match_threshold=match_threshold, on_source=on_source,
                         max_workers=int(max_workers), safety_margin_seconds=safety_margin,
+                        boundaries=boundaries,
                     )
 
                 trademark_ready = add_trademark and (

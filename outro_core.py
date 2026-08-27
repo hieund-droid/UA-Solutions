@@ -839,7 +839,8 @@ def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, work
 
 def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
                         tail_match_threshold=DEFAULT_MATCH_THRESHOLD, on_source=None,
-                        max_workers=1, safety_margin_seconds=0.15, enable_solo_detection=True):
+                        max_workers=1, safety_margin_seconds=0.15, enable_solo_detection=True,
+                        boundaries=None):
     """Với mỗi video trong `paths`: cắt outro đối thủ (nếu xác định được),
     rồi gắn `own_outro_path` vào cuối — GIỮ NGUYÊN nội dung gốc, không xáo
     trộn, không ghép với video khác. Mỗi video đầu vào cho ra đúng 1 video
@@ -851,6 +852,14 @@ def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
 
     `safety_margin_seconds`: xem find_outro_boundaries() — cắt dư thêm 1 ít
     vào nội dung thật để chắc chắn không còn sót khung outro nào ở cuối.
+
+    `boundaries`: truyền sẵn kết quả find_outro_boundaries() nếu ĐÃ tính từ
+    trước (vd lấy từ cache — xem app.py, dò/cắt outro là bước NẶNG nhất
+    trong cả quy trình, trong khi kết quả không đổi nếu video đầu vào không
+    đổi, dù người dùng đổi outro của mình/trademark rồi bấm "Xử lý" lại —
+    phản hồi thật: gen lại cùng 1 mẻ video tốn rất nhiều thời gian dù chỉ
+    đổi 1 chút cấu hình phía sau bước dò outro). None (mặc định) = tự tính
+    như trước đây, không có gì thay đổi cho nơi gọi không cần cache.
 
     Có thể xử lý SONG SONG tối đa `max_workers` video cùng lúc để tận dụng
     nhiều lõi CPU — nhưng MẶC ĐỊNH LÀ 1 (tuần tự, an toàn) vì mỗi video chạy
@@ -873,9 +882,10 @@ def process_outro_swap(paths, own_outro_path, workdir, strip_audio,
     clips_dir = workdir / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
 
-    boundaries = find_outro_boundaries(
-        paths, tail_match_threshold, safety_margin_seconds, enable_solo_detection,
-    )
+    if boundaries is None:
+        boundaries = find_outro_boundaries(
+            paths, tail_match_threshold, safety_margin_seconds, enable_solo_detection,
+        )
     own_info = ffprobe_info(own_outro_path) if own_outro_path is not None else None
 
     made = [None] * len(paths)
