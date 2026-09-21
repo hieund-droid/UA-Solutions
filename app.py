@@ -446,7 +446,7 @@ def save_uploads(uploaded_files, prefix="video_remixer_"):
 
 
 @st.cache_data(show_spinner=False, max_entries=200, ttl=6 * 3600)
-def _cached_find_outro_boundaries(content_hashes, threshold, safety_margin_seconds, _paths):
+def _cached_find_outro_boundaries(content_hashes, threshold, safety_margin_seconds, max_outro_cut, _paths):
     """Bọc outro_core.find_outro_boundaries() qua st.cache_data — đây là
     bước NẶNG NHẤT trong cả quy trình cắt outro (đọc tuần tự nhiều giây
     hình ảnh mỗi video, so khớp chéo, dò-đơn-lẻ scene-cut+badge...), nhưng
@@ -472,6 +472,7 @@ def _cached_find_outro_boundaries(content_hashes, threshold, safety_margin_secon
     cache không "kẹt" quá lâu nếu quay lại dùng vào hôm khác."""
     return outro_core.find_outro_boundaries(
         list(_paths), threshold, safety_margin_seconds, enable_solo_detection=True,
+        max_outro_cut_seconds=max_outro_cut,
     )
 
 
@@ -962,12 +963,43 @@ def render_outro_swap(mode="full"):
                 min_value=0.0, max_value=2.0, value=0.15, step=0.05, key="outro_safety_margin",
                 help="Tăng lên nếu vẫn thấy sót outro ở cuối video.",
             )
+            max_outro_cut = st.number_input(
+                "Outro tối đa (giây)",
+                min_value=1.0, max_value=30.0, value=outro_core.MAX_OUTRO_CUT_SECONDS, step=1.0,
+                key="outro_max_cut",
+                help="Chặn an toàn: dù thuật toán 'tưởng' chắc chắn tới đâu, không bao giờ tự "
+                     "cắt nhiều hơn mức này (outro thật thường chỉ vài giây) — tăng lên chỉ khi "
+                     "biết chắc app đối thủ này có outro dài hơn mức mặc định.",
+            )
             strip_audio = st.checkbox("Bỏ âm thanh trong video kết quả", key="outro_strip_audio")
     else:
         match_threshold = outro_core.DEFAULT_MATCH_THRESHOLD
         max_workers = 1
         safety_margin = 0.15
+        max_outro_cut = outro_core.MAX_OUTRO_CUT_SECONDS
         strip_audio = False
+
+    # Cho phép TỰ NHẬP outro dài bao nhiêu giây, bỏ qua HẲN bước tự nhận
+    # diện (so khớp chéo — bước NẶNG NHẤT, xem _cached_find_outro_boundaries)
+    # — dùng khi đã biết chắc outro dài bao nhiêu giây, hoặc muốn xử lý
+    # NHANH hơn hẳn cho mẻ lớn. Cắt ĐÚNG số giây này ở cuối MỌI video trong
+    # mẻ, không cần ≥2 video giống nhau. Phản hồi thật: muốn có cách tự căn
+    # tay để chắc chắn 100%, không phụ thuộc thuật toán tự nhận diện.
+    manual_cut_seconds = None
+    if mode in ("cut", "full"):
+        manual_cut_enabled = st.checkbox(
+            "✍️ Nhập tay số giây outro",
+            key="outro_manual_enabled",
+            help="Dùng khi bạn đã biết chắc outro đối thủ dài bao nhiêu giây — cắt ĐÚNG số giây "
+                 "này ở cuối MỌI video trong mẻ, không cần so khớp chéo. Nhanh hơn hẳn vì bỏ qua "
+                 "hoàn toàn bước nhận diện (bước nặng/lâu nhất trong cả quy trình).",
+        )
+        if manual_cut_enabled:
+            manual_cut_seconds = st.number_input(
+                "Số giây outro",
+                min_value=0.5, max_value=30.0, value=5.0, step=0.5, key="outro_manual_seconds",
+                help="Ví dụ điền 5 → cắt đúng 5 giây cuối của MỖI video trong mẻ.",
+            )
 
     # Mặc định — chế độ "cut" không đụng gì tới trademark, giữ nguyên các
     # biến này ở giá trị rỗng để phần xử lý phía dưới khỏi bị NameError.
@@ -1110,6 +1142,10 @@ def render_outro_swap(mode="full"):
         st.session_state.outro_outputs = []
         st.session_state.outro_run_error = None
         workdir, input_paths = save_uploads(uploaded_files, prefix="outro_swap_")
+        # Giữ lại workdir cho khu vực "Thêm outro vào thư viện" bên dưới —
+        # đó là hành động THỦ CÔNG, xảy ra ở 1 lượt chạy script SAU (bấm nút
+        # riêng), workdir cục bộ ở đây sẽ mất nếu không lưu vào session_state.
+        st.session_state.outro_workdir = workdir
 
         try:
             with st.status("Đang xử lý video...", expanded=True) as status:
@@ -1135,6 +1171,11 @@ def render_outro_swap(mode="full"):
                     )
                     if reason == "matched":
                         status.write(f"[{done}/{total}] ✓ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro (khớp với video khác){saved_note}")
+                    elif reason == "manual":
+                        status.write(
+                            f"[{done}/{total}] ✂️ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro "
+                            "(tự nhập, không qua nhận diện)"
+                        )
                     elif reason == "solo_badge":
                         status.write(
                             f"[{done}/{total}] ✓ {name}: đã cắt {result['outro_cut_seconds']:.1f}s outro "
@@ -1171,6 +1212,25 @@ def render_outro_swap(mode="full"):
                     for idx, p in enumerate(input_paths, start=1):
                         made.append({"path": p, "outro_cut_seconds": 0.0, "reason": "skipped"})
                         status.write(f"[{idx}/{len(input_paths)}] {p.name}: giữ nguyên (không đụng outro).")
+                elif manual_cut_seconds is not None:
+                    # Bỏ qua HẲN bước tự nhận diện (so khớp chéo) — người
+                    # dùng đã tự xác nhận outro dài bao nhiêu giây, cắt ĐÚNG
+                    # số giây này ở cuối MỌI video, không cần ≥2 video giống
+                    # nhau, cũng không cần cache (đã đủ nhanh, không có gì
+                    # "nặng" để cache lại ở đây).
+                    boundaries = [
+                        {
+                            "outro_start": max(core.ffprobe_info(p)["duration"] - manual_cut_seconds, 0.0),
+                            "reason": "manual",
+                        }
+                        for p in input_paths
+                    ]
+                    outro_core.process_outro_swap(
+                        input_paths, chosen_outro_path, workdir, strip_audio,
+                        tail_match_threshold=match_threshold, on_source=on_source,
+                        max_workers=int(max_workers), safety_margin_seconds=safety_margin,
+                        boundaries=boundaries,
+                    )
                 else:
                     # Dò outro qua wrapper có CACHE (xem _cached_find_outro_
                     # boundaries) — nếu đúng mẻ video này (nội dung giống
@@ -1182,7 +1242,7 @@ def render_outro_swap(mode="full"):
                         for f in uploaded_files
                     )
                     boundaries = _cached_find_outro_boundaries(
-                        content_hashes, match_threshold, safety_margin, input_paths,
+                        content_hashes, match_threshold, safety_margin, max_outro_cut, input_paths,
                     )
                     outro_core.process_outro_swap(
                         input_paths, chosen_outro_path, workdir, strip_audio,
@@ -1256,6 +1316,44 @@ def render_outro_swap(mode="full"):
     if outro_ok_outputs:
         st.subheader("Kết quả")
         render_results_grid([r["path"] for r in outro_ok_outputs], "outro_dl")
+
+    # Thêm outro vào thư viện dùng chung — CHỦ ĐỘNG, không chỉ trông chờ tự
+    # động lưu (xem outro_core._save_to_known_library, chỉ tự lưu khi reason
+    # đủ tin cậy) — phản hồi thật: trước đây thư viện chỉ xem/xoá được, chưa
+    # có cách nào TỰ THÊM. Cho chọn 1 video trong mẻ vừa xử lý + tự xác nhận
+    # outro dài bao nhiêu giây, dùng lại đúng logic chống lưu trùng lặp.
+    library_candidates = [
+        r for r in st.session_state.outro_outputs
+        if r.get("input_path") is not None and r.get("duration")
+    ]
+    if mode in ("cut", "full") and library_candidates:
+        with st.expander("📚 Thêm outro vào thư viện dùng chung"):
+            st.caption(
+                "Chọn 1 video trong mẻ vừa xử lý, xác nhận outro dài bao nhiêu giây ở cuối "
+                "video ĐÓ (video gốc, chưa cắt), để lưu đúng đoạn này vào thư viện dùng chung — "
+                "lần sau video khác cùng outro (dù tải lên chỉ 1 mình) sẽ tự nhận ra được."
+            )
+            names = [Path(r["input_path"]).name for r in library_candidates]
+            pick_idx = st.selectbox(
+                "Video", range(len(names)), format_func=lambda i: names[i], key="outro_lib_add_pick",
+            )
+            picked = library_candidates[pick_idx]
+            default_cut = picked["outro_cut_seconds"] if picked["outro_cut_seconds"] > 0 else 3.0
+            lib_cut_seconds = st.number_input(
+                "Outro dài bao nhiêu giây (tính từ cuối video này)",
+                min_value=0.5, max_value=30.0, value=float(min(default_cut, 30.0)), step=0.5,
+                key="outro_lib_add_seconds",
+            )
+            if st.button("Thêm vào thư viện", key="outro_lib_add_confirm"):
+                outro_start = max(picked["duration"] - lib_cut_seconds, 0.0)
+                lib_workdir = st.session_state.get("outro_workdir")
+                saved = outro_core.add_to_known_library(
+                    picked["input_path"], outro_start, picked["duration"], lib_workdir, match_threshold,
+                )
+                if saved is not None:
+                    st.success(f"✓ Đã thêm vào thư viện dùng chung: {saved.name}")
+                else:
+                    st.warning("Đoạn này đã có sẵn trong thư viện (hoặc lỗi khi lưu) — không thêm trùng.")
 
 
 def render_logo_cover():

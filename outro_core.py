@@ -138,6 +138,15 @@ MIN_CONTENT_SECONDS = 1.0
 # tưởng đã "matched" xong rồi. Xem đoạn đối soát ngay dưới
 # find_outro_boundaries() để biết cách vá.
 MATCHED_SUSPICIOUS_CUT_SECONDS = 0.5
+# CHẶN CỨNG cuối cùng, áp dụng cho MỌI lớp nhận diện (matched/library_match/
+# solo_badge/solo_scene) — outro quảng cáo THẬT trên thực tế chỉ dài vài
+# giây, không bao giờ tới 10 giây. Dù lớp nào "tưởng" đã khớp chắc chắn tới
+# đâu (vd lỡ có lỗi khác chưa lường tới, tương tự vụ mẻ "0921.Mirror.Storm"
+# — xem lịch sử sửa "lấy trung vị" ở find_outro_boundaries), vẫn không cho
+# kết quả tự động vượt quá mức này — an toàn hơn đoán liều là cắt oan nội
+# dung thật. KHÔNG áp dụng cho outro NGƯỜI DÙNG TỰ NHẬP tay (reason="manual"
+# — xem app.py) vì đó là lựa chọn CHỦ ĐỘNG của người dùng, không phải suy ra.
+MAX_OUTRO_CUT_SECONDS = 10.0
 
 
 def _pick_larger_spec(info_a, info_b):
@@ -633,8 +642,23 @@ def _save_to_known_library(video_path, outro_start, duration, threshold, workdir
     return out_path
 
 
+def add_to_known_library(video_path, outro_start, duration, workdir, threshold=DEFAULT_MATCH_THRESHOLD):
+    """Wrapper CÔNG KHAI của _save_to_known_library — dùng khi NGƯỜI DÙNG CHỦ
+    ĐỘNG chọn 1 video trong mẻ vừa xử lý + tự xác nhận outro dài bao nhiêu
+    giây, để thêm vào thư viện dùng chung ngay (xem app.py, khu vực "Thêm
+    outro vào thư viện" sau khi xử lý xong) — khác với _process_one_video
+    gọi hàm gốc TỰ ĐỘNG ngay sau khi cắt (chỉ xảy ra với reason đủ tin cậy).
+    Đây là lối vào THỦ CÔNG, không phụ thuộc reason nào — phản hồi thật:
+    trước đây thư viện chỉ tự lưu, không có cách nào chủ động thêm được.
+
+    Cùng logic chống lưu trùng lặp (so với outro có sẵn trong thư viện) và
+    cùng tự đẩy lên Drive như bản tự động. Trả về Path nếu lưu thành công,
+    None nếu đoạn này đã có sẵn trong thư viện (trùng lặp) hoặc lỗi."""
+    return _save_to_known_library(video_path, outro_start, duration, threshold, workdir)
+
+
 def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margin_seconds=0.15,
-                           enable_solo_detection=True):
+                           enable_solo_detection=True, max_outro_cut_seconds=MAX_OUTRO_CUT_SECONDS):
     """Xác định mốc thời gian bắt đầu outro đối thủ cho mỗi video, bằng cách
     so khớp hình ảnh CHÉO giữa các video trong cùng danh sách `paths`ở NHIỀU
     mốc thời gian khác nhau (xem _probe_offsets — outro thực tế dài
@@ -672,6 +696,10 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
     `enable_solo_detection`: tắt đi (False) để chỉ dùng so khớp chéo như
     trước đây — dùng khi cần so sánh/kiểm tra hồi quy, bình thường luôn để
     True.
+
+    `max_outro_cut_seconds`: xem MAX_OUTRO_CUT_SECONDS — chặn CỨNG, áp dụng
+    sau cùng cho MỌI video có outro_start (bất kể reason nào), không bao giờ
+    để kết quả tự động cắt nhiều hơn mức này.
     """
     n = len(paths)
     infos = [ffprobe_info(p) for p in paths]
@@ -804,6 +832,16 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
                 reason = "solo_badge" if solo["confidence"] == "badge" else "solo_scene"
                 results[i] = {"outro_start": solo_outro_start, "reason": reason}
 
+    # Chặn CỨNG cuối cùng (xem MAX_OUTRO_CUT_SECONDS) — áp dụng SAU tất cả
+    # các lớp phía trên, bất kể lớp nào tính ra kết quả, không bao giờ để
+    # 1 video tự động bị cắt nhiều hơn `max_outro_cut_seconds`.
+    for i in range(n):
+        if results[i]["outro_start"] is None:
+            continue
+        floor = max(durations[i] - max_outro_cut_seconds, 0.0)
+        if results[i]["outro_start"] < floor:
+            results[i]["outro_start"] = floor
+
     return results
 
 
@@ -884,6 +922,13 @@ def _process_one_video(i, p, boundary, own_outro_path, own_info, clips_dir, work
     return {
         "path": out_path, "outro_cut_seconds": cut_seconds, "reason": boundary["reason"],
         "saved_to_library": saved_to_library,
+        # input_path/outro_start/duration: cho app.py dùng ở khu vực "Thêm
+        # outro vào thư viện" (add_to_known_library) sau khi xử lý xong —
+        # video GỐC (chưa cắt) vẫn còn nguyên trên đĩa tới lúc đó, nên trỏ
+        # thẳng vào `p` là đủ, không cần giữ lại bản đã cắt riêng.
+        "input_path": p,
+        "outro_start": content_end if boundary["outro_start"] is not None else None,
+        "duration": info["duration"],
     }
 
 
