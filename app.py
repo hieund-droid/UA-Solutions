@@ -498,6 +498,22 @@ def apply_output_naming(paths, prefix):
     return renamed
 
 
+def _zip_output_name(paths):
+    """Đoán tên file .zip tổng từ tên các file kết quả: nếu tất cả đều
+    theo cú pháp 'prefix.N.ext' (người dùng đã đặt tên ở ô 'Đặt tên file
+    xuất ra', xem apply_output_naming), dùng 'prefix' làm tên zip; nếu
+    không (tên mặc định tự động, không đổi tên) thì giữ 'ket_qua.zip'."""
+    bases = set()
+    for p in paths:
+        m = re.match(r"^(.+)\.\d+$", p.stem)
+        if not m:
+            return "ket_qua.zip"
+        bases.add(m.group(1))
+    if len(bases) == 1:
+        return f"{bases.pop()}.zip"
+    return "ket_qua.zip"
+
+
 def render_results_grid(paths, download_key_prefix, cols_per_row=4):
     """Hiển thị các video kết quả dạng lưới (thay vì xếp chồng dọc) — tận
     dụng bố cục rộng, dễ xem/tải nhiều video cùng lúc hơn. Có nút tải hết
@@ -514,7 +530,7 @@ def render_results_grid(paths, download_key_prefix, cols_per_row=4):
         st.download_button(
             f"⬇️ Download All ({len(existing)} video, .zip)",
             data=zip_buf.getvalue(),
-            file_name="ket_qua.zip",
+            file_name=_zip_output_name(existing),
             mime="application/zip",
             key=f"{download_key_prefix}_zip_all",
             type="primary",
