@@ -53,6 +53,7 @@ Yêu cầu: ffmpeg, ffprobe trong PATH (giống remix_core.py).
 """
 
 import concurrent.futures
+import statistics
 import uuid
 from pathlib import Path
 
@@ -704,15 +705,21 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
             # Dò ranh giới với TỪNG thành viên khác trong nhóm (không chỉ 1
             # video cố định — nhóm được gộp theo kiểu "bắt cầu": A khớp B,
             # B khớp C -> A,B,C cùng nhóm dù A có thể KHÔNG khớp trực tiếp
-            # C), rồi lấy kết quả CẮT ĐƯỢC NHIỀU NHẤT (content_end nhỏ nhất)
-            # trong số đó — không phải kết quả có mốc neo (anchor) gần cuối
-            # nhất. Lý do: 1 video "bạn so sánh" có thể tự nó cũng bị cắt
-            # cụt/thiếu 1 phần outro (đã gặp thật), khiến việc dò lùi dừng
-            # quá sớm dù video đang xét vẫn còn outro thật kéo dài hơn — so
-            # với NHIỀU video khác rồi lấy bằng chứng "đi xa nhất" (nhiều
-            # khung hình khớp liên tiếp nhất) mới đáng tin cậy nhất, tránh
-            # cắt sót do "bạn so sánh" không đủ dữ liệu.
-            best_boundary = None
+            # C), rồi lấy TRUNG VỊ (median) các ranh giới đó — KHÔNG lấy giá
+            # trị cắt được NHIỀU NHẤT (content_end nhỏ nhất, cách làm trước
+            # đây). Lý do đổi (báo lỗi thực tế mẻ "0921.Mirror.Storm", 19
+            # video cùng 1 outro, vài video bị cắt sâu hơn hẳn các video còn
+            # lại): lấy giá trị nhỏ nhất nghĩa là CHỈ CẦN 1 video "bạn so
+            # sánh" bị khớp NHẦM sâu hơn outro thật (vd 2 video tình cờ giống
+            # nhau thêm 1 đoạn ngay TRƯỚC outro, không chỉ đúng đoạn outro)
+            # cũng đủ kéo ranh giới của video đang xét cắt lụt vào nội dung
+            # thật, dù MỌI video khác trong nhóm đều cho ra ranh giới nông
+            # hơn, đúng hơn. Trung vị vẫn chịu được thiểu số video "bạn so
+            # sánh" bị cắt cụt/thiếu 1 phần outro (dừng quá sớm — lý do gốc
+            # của cách làm cũ) MÀ KHÔNG bị 1 khớp nhầm kéo quá sâu chi phối
+            # kết quả — chỉ cần ĐA SỐ video khác trong nhóm cho ra ranh giới
+            # đúng là đủ, không cần TẤT CẢ.
+            candidate_boundaries = []
             for j in g:
                 if j == i:
                     continue
@@ -723,20 +730,18 @@ def find_outro_boundaries(paths, threshold=DEFAULT_MATCH_THRESHOLD, safety_margi
                 boundary = _find_boundary_by_time(
                     tails[i], tails[j], threshold, anchor_offset, anchor_shift,
                 )
-                if best_boundary is None or boundary < best_boundary:
-                    best_boundary = boundary
-            if best_boundary is None:
+                candidate_boundaries.append(boundary)
+            if not candidate_boundaries:
                 continue
+            best_boundary = statistics.median(candidate_boundaries)
             candidate_start = max(best_boundary - safety_margin_seconds, 0.0)
-            # An toàn: lấy kết quả "cắt được NHIỀU NHẤT" trong cả nhóm (xem
-            # comment phía trên) có rủi ro thật — nếu dù chỉ 1 VIDEO KHÁC
-            # trong nhóm có nội dung giống bất thường (trùng lặp/gần trùng,
-            # không chỉ trùng đúng đoạn outro), việc dò lùi có thể chạy quá
-            # xa, khiến ranh giới tính ra nuốt gần hết/hết video — đã gặp
-            # thật (báo lỗi thực tế): 1 video trong mẻ 30 video làm ghép
-            # clip lỗi vì đoạn nội dung còn lại gần như rỗng. Không tin kết
-            # quả nếu nội dung còn lại dưới MIN_CONTENT_SECONDS — coi như
-            # KHÔNG xác định được (giữ nguyên "none"), an toàn hơn cắt sai.
+            # An toàn: dù đã dùng trung vị, 1 nhóm chỉ có 2 video (không có
+            # "đa số" nào để phân xử) hoặc cả nhóm cùng bị khớp nhầm vẫn có
+            # rủi ro ranh giới nuốt gần hết/hết video — đã gặp thật (báo lỗi
+            # thực tế): 1 video trong mẻ 30 video làm ghép clip lỗi vì đoạn
+            # nội dung còn lại gần như rỗng. Không tin kết quả nếu nội dung
+            # còn lại dưới MIN_CONTENT_SECONDS — coi như KHÔNG xác định được
+            # (giữ nguyên "none"), an toàn hơn cắt sai.
             if candidate_start < MIN_CONTENT_SECONDS:
                 continue
             results[i] = {"outro_start": candidate_start, "reason": "matched"}
