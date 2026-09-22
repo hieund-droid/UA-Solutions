@@ -53,6 +53,7 @@ Yêu cầu: ffmpeg, ffprobe trong PATH (giống remix_core.py).
 """
 
 import concurrent.futures
+import shutil
 import statistics
 import uuid
 from pathlib import Path
@@ -633,7 +634,14 @@ def _save_to_known_library(video_path, outro_start, duration, threshold, workdir
     if not clips:
         return None
     out_path = KNOWN_OUTRO_DIR / f"known_{uuid.uuid4().hex[:10]}.mp4"
-    clips[0].rename(out_path)
+    # shutil.move (KHÔNG dùng Path.rename) — `clips[0]` nằm trong workdir tạm
+    # (thường /tmp), `out_path` nằm trong thư mục mã nguồn app (known_outros/)
+    # — trên Streamlit Cloud 2 nơi này ở 2 Ổ ĐĨA KHÁC NHAU, os.rename() không
+    # di chuyển được file giữa 2 ổ đĩa khác nhau (OSError: Invalid cross-
+    # device link — lỗi thật đã gặp). shutil.move() tự phát hiện, chuyển
+    # sang copy+xoá khi rename() trực tiếp không được, vẫn nhanh (rename)
+    # khi cùng ổ đĩa như trước.
+    shutil.move(str(clips[0]), str(out_path))
     for c in clips[1:]:
         c.unlink(missing_ok=True)
     # Đẩy lên Drive ngay — outro tự nhận diện này chỉ tồn tại trên đĩa cục

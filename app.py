@@ -1347,13 +1347,19 @@ def render_outro_swap(mode="full"):
             if st.button("Thêm vào thư viện", key="outro_lib_add_confirm"):
                 outro_start = max(picked["duration"] - lib_cut_seconds, 0.0)
                 lib_workdir = st.session_state.get("outro_workdir")
-                saved = outro_core.add_to_known_library(
-                    picked["input_path"], outro_start, picked["duration"], lib_workdir, match_threshold,
-                )
+                saved, lib_error = None, None
+                try:
+                    saved = outro_core.add_to_known_library(
+                        picked["input_path"], outro_start, picked["duration"], lib_workdir, match_threshold,
+                    )
+                except Exception as e:
+                    lib_error = str(e)
                 if saved is not None:
                     st.success(f"✓ Đã thêm vào thư viện dùng chung: {saved.name}")
+                elif lib_error is not None:
+                    st.error(f"Lỗi khi lưu vào thư viện: {lib_error}")
                 else:
-                    st.warning("Đoạn này đã có sẵn trong thư viện (hoặc lỗi khi lưu) — không thêm trùng.")
+                    st.warning("Đoạn này đã có sẵn trong thư viện — không thêm trùng.")
 
 
 def render_logo_cover():
