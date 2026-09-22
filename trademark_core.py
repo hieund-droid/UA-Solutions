@@ -296,21 +296,32 @@ def apply_trademark(video_path, overlay_rgba, out_path, workdir,
     with open(err_log, "wb") as errf:
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=errf)
         frame_idx = 0
-        while True:
-            ok, frame = cap.read()
-            if not ok:
-                break
-            t = frame_idx / fps
-            if skip_after_seconds is None or t < skip_after_seconds:
-                x, y, rot = _compute_position(t, max_x, max_y, speed_px_per_sec, path_style, range_percent)
-                frame = _blend_overlay_rotated(frame, overlay, x, y, overlay_w, overlay_h, rot)
-            proc.stdin.write(frame.tobytes())
-            frame_idx += 1
+        pipe_broken = False
+        try:
+            while True:
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                t = frame_idx / fps
+                if skip_after_seconds is None or t < skip_after_seconds:
+                    x, y, rot = _compute_position(t, max_x, max_y, speed_px_per_sec, path_style, range_percent)
+                    frame = _blend_overlay_rotated(frame, overlay, x, y, overlay_w, overlay_h, rot)
+                proc.stdin.write(frame.tobytes())
+                frame_idx += 1
+        except (BrokenPipeError, OSError):
+            # ffmpeg đã CHẾT giữa lúc đang ghi khung hình (vd hết RAM, tiến
+            # trình bị hệ thống/container kill giữa chừng — đã gặp thật trên
+            # Streamlit Cloud) — KHÔNG để lỗi ghi ống (pipe) này (không nói
+            # lên được lý do thật) che mất lý do THẬT của ffmpeg đã ghi vào
+            # err_log — đọc tiếp ở dưới để báo đúng nguyên nhân, giống hệt
+            # nhánh proc.returncode != 0 bình thường.
+            pipe_broken = True
         cap.release()
-        proc.stdin.close()
+        if not pipe_broken:
+            proc.stdin.close()
         proc.wait()
 
-    if proc.returncode != 0:
+    if proc.returncode != 0 or pipe_broken:
         err_text = err_log.read_text(errors="replace") if err_log.exists() else ""
         raise RuntimeError(f"Lệnh ffmpeg thất bại khi gắn trademark:\n{err_text[-2000:]}")
     err_log.unlink(missing_ok=True)

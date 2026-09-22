@@ -1283,12 +1283,27 @@ def render_outro_swap(mode="full"):
                         final_dur = core.ffprobe_info(r["path"])["duration"]
                         skip_after = max(final_dur - own_outro_dur, 0.0)
                         tm_path = r["path"].parent / f"{r['path'].stem}_tm{r['path'].suffix}"
-                        trademark_core.apply_trademark(
-                            r["path"], overlay_rgba, tm_path, workdir,
-                            opacity=trademark_opacity / 100, size_percent=trademark_size,
-                            speed_px_per_sec=trademark_speed, path_style=trademark_path_style,
-                            skip_after_seconds=skip_after, range_percent=trademark_range,
-                        )
+                        try:
+                            trademark_core.apply_trademark(
+                                r["path"], overlay_rgba, tm_path, workdir,
+                                opacity=trademark_opacity / 100, size_percent=trademark_size,
+                                speed_px_per_sec=trademark_speed, path_style=trademark_path_style,
+                                skip_after_seconds=skip_after, range_percent=trademark_range,
+                            )
+                        except Exception as e:
+                            # 1 video lỗi ở bước trademark (vd ffmpeg bị hệ
+                            # thống/container kill giữa chừng vì hết RAM —
+                            # lỗi thật đã gặp) KHÔNG được làm hỏng CẢ MẺ,
+                            # giống triết lý đã áp dụng ở bước cắt outro
+                            # (xem process_outro_swap) — video này GIỮ
+                            # NGUYÊN bản đã cắt outro (chưa gắn trademark),
+                            # các video khác trong mẻ vẫn tiếp tục bình
+                            # thường, chỉ báo lỗi riêng cho đúng video này.
+                            status.write(
+                                f"⚠️ {r['path'].name}: gắn trademark thất bại, GIỮ bản chưa gắn trademark — {e}"
+                            )
+                            tm_path.unlink(missing_ok=True)
+                            continue
                         r["path"].unlink(missing_ok=True)
                         r["path"] = tm_path
 
@@ -1347,19 +1362,28 @@ def render_outro_swap(mode="full"):
             if st.button("Thêm vào thư viện", key="outro_lib_add_confirm"):
                 outro_start = max(picked["duration"] - lib_cut_seconds, 0.0)
                 lib_workdir = st.session_state.get("outro_workdir")
-                saved, lib_error = None, None
+                lib_result, lib_error = None, None
                 try:
-                    saved = outro_core.add_to_known_library(
+                    lib_result = outro_core.add_to_known_library(
                         picked["input_path"], outro_start, picked["duration"], lib_workdir, match_threshold,
                     )
                 except Exception as e:
                     lib_error = str(e)
-                if saved is not None:
-                    st.success(f"✓ Đã thêm vào thư viện dùng chung: {saved.name}")
-                elif lib_error is not None:
+                if lib_error is not None:
                     st.error(f"Lỗi khi lưu vào thư viện: {lib_error}")
+                elif lib_result["saved"] is not None:
+                    st.success(f"✓ Đã thêm vào thư viện dùng chung: {lib_result['saved'].name}")
+                elif lib_result["duplicate_of"] is not None:
+                    dup = lib_result["duplicate_of"]
+                    st.warning(
+                        f"Outro này bị coi là ĐÃ CÓ trong thư viện, khớp với **{dup.name}** — xem lại "
+                        "video dưới đây, nếu thấy KHÁC outro của bạn (bị nhận nhầm do cùng tông màu/bố "
+                        "cục) thì xoá file đó ở khu vực \"Thư viện outro đã nhận diện\" phía trên rồi "
+                        "thêm lại."
+                    )
+                    st.video(str(dup))
                 else:
-                    st.warning("Đoạn này đã có sẵn trong thư viện — không thêm trùng.")
+                    st.warning("Không đọc được đoạn outro này để kiểm tra — thử lại.")
 
 
 def render_logo_cover():
